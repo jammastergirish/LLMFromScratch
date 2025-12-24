@@ -29,6 +29,7 @@ class TransformerDataset:
         self.cfg.d_vocab = self.tokenizer.vocab_size
 
         # Encode text to tokens
+        # self.data: [total_tokens] - flattened tensor of token IDs
         self.data = self.tokenizer.encode_tensor(text)
 
         # Create dataset
@@ -58,20 +59,31 @@ class TransformerDataset:
     def _create_sequences(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Create (input, target) pairs where target is input shifted by 1"""
         block_size = self.cfg.n_ctx
+        # self.data: [total_tokens] - flattened token sequence
         X = []
         Y = []
         for i in range(len(self.data) - block_size):
-            X.append(self.data[i : i + block_size])
-            Y.append(self.data[i + 1 : i + block_size + 1])
+            # X[i]: [block_size] - input sequence
+            # Y[i]: [block_size] - target sequence (shifted by 1)
+            X.append(self.data[i: i + block_size])
+            Y.append(self.data[i + 1: i + block_size + 1])
+        # X: [num_sequences, block_size]
+        # Y: [num_sequences, block_size]
         return torch.stack(X), torch.stack(Y)
 
     def _split_data(
         self,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Split data into train and validation sets"""
+        # self.X: [num_sequences, block_size]
+        # self.Y: [num_sequences, block_size]
         split_idx = int(self.train_split * len(self.X))
+        # X_train: [num_train_sequences, block_size]
+        # Y_train: [num_train_sequences, block_size]
         X_train = self.X[:split_idx]
         Y_train = self.Y[:split_idx]
+        # X_val: [num_val_sequences, block_size]
+        # Y_val: [num_val_sequences, block_size]
         X_val = self.X[split_idx:]
         Y_val = self.Y[split_idx:]
         return X_train, Y_train, X_val, Y_val
@@ -97,4 +109,3 @@ class TransformerDataset:
         print(
             f"Train: {len(self.X_train)} sequences, Val: {len(self.X_val)} sequences"
         )
-

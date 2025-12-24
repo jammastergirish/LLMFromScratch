@@ -18,23 +18,31 @@ class GPTWithEinops(nn.Module):
             TransformerBlockWithEinops(cfg) for _ in range(cfg.n_layers)
         ])
         self.ln_f = LayerNormWithEinops(cfg)
+        # unembed: [d_model, d_vocab]
         self.unembed = nn.Parameter(torch.empty((cfg.d_model, cfg.d_vocab)))
         nn.init.normal_(self.unembed, std=self.cfg.init_range)
 
     def forward(
         self, tokens: Int[Tensor, "batch position"]
     ) -> Float[Tensor, "batch position d_vocab"]:
+        # tokens: [batch, position]
+
         # Token embeddings
+        # residual: [batch, position, d_model]
         residual = self.embed(tokens)
 
         # Positional embeddings
+        # pos_emb: [batch, position, d_model]
+        # residual: [batch, position, d_model]
         residual = residual + self.pos_embed(tokens)
 
         # Transformer blocks
+        # Each block: [batch, position, d_model] -> [batch, position, d_model]
         for block in self.blocks:
             residual = block(residual)
 
         # Final layer norm
+        # residual: [batch, position, d_model]
         residual = self.ln_f(residual)
 
         # Unembedding to logits
@@ -56,23 +64,31 @@ class GPTWithoutEinops(nn.Module):
             TransformerBlockWithoutEinops(cfg) for _ in range(cfg.n_layers)
         ])
         self.ln_f = LayerNormWithoutEinops(cfg)
+        # unembed: [d_model, d_vocab]
         self.unembed = nn.Parameter(torch.empty((cfg.d_model, cfg.d_vocab)))
         nn.init.normal_(self.unembed, std=self.cfg.init_range)
 
     def forward(
         self, tokens: Int[Tensor, "batch position"]
     ) -> Float[Tensor, "batch position d_vocab"]:
+        # tokens: [batch, position]
+
         # Token embeddings
+        # residual: [batch, position, d_model]
         residual = self.embed(tokens)
 
         # Positional embeddings
+        # pos_emb: [batch, position, d_model]
+        # residual: [batch, position, d_model]
         residual = residual + self.pos_embed(tokens)
 
         # Transformer blocks
+        # Each block: [batch, position, d_model] -> [batch, position, d_model]
         for block in self.blocks:
             residual = block(residual)
 
         # Final layer norm
+        # residual: [batch, position, d_model]
         residual = self.ln_f(residual)
 
         # Unembedding to logits

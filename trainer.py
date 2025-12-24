@@ -90,12 +90,19 @@ class TransformerTrainer:
         pbar = tqdm(range(self.max_iters), desc="Training")
         for iter_num in pbar:
             # Get random batch
+            # idx: [batch_size]
             idx = torch.randint(0, len(self.X_train), (self.args.batch_size,))
+            # x_batch: [batch_size, seq_len]
+            # y_batch: [batch_size, seq_len]
             x_batch = self.X_train[idx].to(self.device)
             y_batch = self.Y_train[idx].to(self.device)
 
             # Forward pass
+            # logits: [batch_size, seq_len, vocab_size]
             logits = self.model(x_batch)
+            # Reshape for cross_entropy
+            # logits.view(-1, logits.size(-1)): [batch_size * seq_len, vocab_size]
+            # y_batch.view(-1): [batch_size * seq_len]
             loss = F.cross_entropy(
                 logits.view(-1, logits.size(-1)), y_batch.view(-1)
             )

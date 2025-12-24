@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
@@ -19,10 +18,18 @@ class TransformerBlockWithEinops(nn.Module):
     def forward(
         self, residual: Float[Tensor, "batch posn d_model"]
     ) -> Float[Tensor, "batch posn d_model"]:
+        # residual: [batch, posn, d_model]
+
         # Pre-norm attention with residual connection
+        # ln1(residual): [batch, posn, d_model]
+        # attn(...): [batch, posn, d_model]
+        # residual: [batch, posn, d_model]
         residual = residual + self.attn(self.ln1(residual))
 
         # Pre-norm MLP with residual connection
+        # ln2(residual): [batch, posn, d_model]
+        # mlp(...): [batch, posn, d_model]
+        # residual: [batch, posn, d_model]
         residual = residual + self.mlp(self.ln2(residual))
 
         return residual
@@ -40,10 +47,18 @@ class TransformerBlockWithoutEinops(nn.Module):
     def forward(
         self, residual: Float[Tensor, "batch posn d_model"]
     ) -> Float[Tensor, "batch posn d_model"]:
+        # residual: [batch, posn, d_model]
+
         # Pre-norm attention with residual connection
+        # ln1(residual): [batch, posn, d_model]
+        # attn(...): [batch, posn, d_model]
+        # residual: [batch, posn, d_model]
         residual = residual + self.attn(self.ln1(residual))
 
         # Pre-norm MLP with residual connection
+        # ln2(residual): [batch, posn, d_model]
+        # mlp(...): [batch, posn, d_model]
+        # residual: [batch, posn, d_model]
         residual = residual + self.mlp(self.ln2(residual))
 
         return residual

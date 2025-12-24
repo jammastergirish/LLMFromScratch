@@ -37,46 +37,65 @@ class TransformerSampler:
             top_p: If set, use nucleus sampling (top_p cumulative probability)
         """
         # Encode prompt
+        # tokens: [seq_len] - list of token IDs
         tokens = self.tokenizer.encode(prompt)
-        tokens_tensor = torch.tensor([tokens], dtype=torch.long, device=self.device)
+        # tokens_tensor: [1, seq_len] - add batch dimension
+        tokens_tensor = torch.tensor(
+            [tokens], dtype=torch.long, device=self.device)
 
         # Generate tokens
         for _ in range(max_new_tokens):
             # Get model predictions
+            # logits: [1, seq_len, vocab_size]
             logits = self.model(tokens_tensor)
-            # Get logits for last position
+            # Get logits for last position only
+            # logits: [vocab_size] - logits for last token position
             logits = logits[0, -1, :] / temperature
 
             # Apply top_k filtering
             if top_k is not None:
-                indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+                # indices_to_remove: [vocab_size] - boolean mask
+                indices_to_remove = logits < torch.topk(logits, top_k)[
+                    0][..., -1, None]
                 logits[indices_to_remove] = float("-inf")
 
             # Apply top_p (nucleus) filtering
             if top_p is not None:
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                # sorted_logits: [vocab_size] - sorted descending
+                # sorted_indices: [vocab_size] - original indices
+                sorted_logits, sorted_indices = torch.sort(
+                    logits, descending=True)
+                # cumulative_probs: [vocab_size] - cumulative probabilities
                 cumulative_probs = torch.cumsum(
                     F.softmax(sorted_logits, dim=-1), dim=-1
                 )
                 # Remove tokens with cumulative probability above threshold
+                # sorted_indices_to_remove: [vocab_size] - boolean mask
                 sorted_indices_to_remove = cumulative_probs > top_p
                 sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
                     ..., :-1
                 ].clone()
                 sorted_indices_to_remove[..., 0] = 0
+                # indices_to_remove: [vocab_size] - boolean mask
                 indices_to_remove = sorted_indices_to_remove.scatter(
                     0, sorted_indices, sorted_indices_to_remove
                 )
                 logits[indices_to_remove] = float("-inf")
 
             # Sample from the distribution
+            # probs: [vocab_size] - probability distribution
             probs = F.softmax(logits, dim=-1)
+            # next_token: [1] - sampled token ID
             next_token = torch.multinomial(probs, num_samples=1)
 
             # Append to sequence
-            tokens_tensor = torch.cat([tokens_tensor, next_token.unsqueeze(0)], dim=1)
+            # next_token.unsqueeze(0): [1, 1] - add batch and position dims
+            # tokens_tensor: [1, seq_len] -> [1, seq_len + 1]
+            tokens_tensor = torch.cat(
+                [tokens_tensor, next_token.unsqueeze(0)], dim=1)
 
         # Decode and return
+        # generated_tokens: [total_seq_len] - list of all token IDs
         generated_tokens = tokens_tensor[0].tolist()
         return self.tokenizer.decode(generated_tokens)
 
@@ -102,4 +121,3 @@ class TransformerSampler:
                 )
             )
         return results
-

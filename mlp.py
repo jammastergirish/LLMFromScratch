@@ -9,9 +9,13 @@ class MLPWithEinops(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+        # W_in: [d_model, d_mlp] - input projection
         self.W_in = nn.Parameter(torch.empty((cfg.d_model, cfg.d_mlp)))
+        # b_in: [d_mlp] - input bias
         self.b_in = nn.Parameter(torch.zeros(cfg.d_mlp))
+        # W_out: [d_mlp, d_model] - output projection
         self.W_out = nn.Parameter(torch.empty((cfg.d_mlp, cfg.d_model)))
+        # b_out: [d_model] - output bias
         self.b_out = nn.Parameter(torch.zeros(cfg.d_model))
 
         nn.init.normal_(self.W_in, std=self.cfg.init_range)
@@ -29,7 +33,8 @@ class MLPWithEinops(nn.Module):
             "batch posn d_model, d_model d_mlp -> batch posn d_mlp"
         ) + self.b_in
 
-        # GELU activation
+        # GELU activation (element-wise)
+        # hidden: [batch, posn, d_mlp]
         hidden = torch.nn.functional.gelu(hidden)
 
         # Second linear layer: d_mlp -> d_model
@@ -48,9 +53,13 @@ class MLPWithoutEinops(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+        # W_in: [d_model, d_mlp] - input projection
         self.W_in = nn.Parameter(torch.empty((cfg.d_model, cfg.d_mlp)))
+        # b_in: [d_mlp] - input bias
         self.b_in = nn.Parameter(torch.zeros(cfg.d_mlp))
+        # W_out: [d_mlp, d_model] - output projection
         self.W_out = nn.Parameter(torch.empty((cfg.d_mlp, cfg.d_model)))
+        # b_out: [d_model] - output bias
         self.b_out = nn.Parameter(torch.zeros(cfg.d_model))
 
         nn.init.normal_(self.W_in, std=self.cfg.init_range)
@@ -65,7 +74,8 @@ class MLPWithoutEinops(nn.Module):
         # hidden: [batch, posn, d_mlp]
         hidden = torch.matmul(residual, self.W_in) + self.b_in
 
-        # GELU activation
+        # GELU activation (element-wise)
+        # hidden: [batch, posn, d_mlp]
         hidden = torch.nn.functional.gelu(hidden)
 
         # Second linear layer: d_mlp -> d_model
