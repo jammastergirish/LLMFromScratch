@@ -1,3 +1,4 @@
 checkpoints/
 *.pyc
 __pycache__/
+*.pt
