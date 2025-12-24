@@ -2,23 +2,46 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
+from config import Architecture
 from embed import EmbedWithoutTorch, EmbedWithTorch
 from positional_embedding import PosEmbedWithEinops, PosEmbedWithoutEinops
-from transformer_block import TransformerBlockWithEinops, TransformerBlockWithoutEinops
-from layernorm import LayerNormWithEinops, LayerNormWithoutEinops
+from transformer_block import create_transformer_block
+from layernorm import create_norm_layer
+from rope import RoPE
 
 
-class GPTWithEinops(nn.Module):
+class TransformerModelWithEinops(nn.Module):
+    """Generic transformer model supporting both GPT and LLaMA architectures with Einops"""
+
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+
+        # Token embeddings (same for both)
         self.embed = EmbedWithoutTorch(cfg)
-        self.pos_embed = PosEmbedWithEinops(cfg)
+
+        # Positional embeddings (only for GPT)
+        if cfg.architecture == Architecture.GPT:
+            self.pos_embed = PosEmbedWithEinops(cfg)
+        else:  # LLaMA - no positional embedding layer
+            self.pos_embed = None
+
+        # RoPE (only for LLaMA)
+        if cfg.architecture == Architecture.LLAMA:
+            self.rope = RoPE(cfg)
+        else:
+            self.rope = None
+
+        # Transformer blocks
         self.blocks = nn.ModuleList([
-            TransformerBlockWithEinops(cfg) for _ in range(cfg.n_layers)
+            create_transformer_block(cfg, use_einops=True, rope=self.rope)
+            for _ in range(cfg.n_layers)
         ])
-        self.ln_f = LayerNormWithEinops(cfg)
-        # unembed: [d_model, d_vocab]
+
+        # Final normalization
+        self.ln_f = create_norm_layer(cfg, use_einops=True)
+
+        # Unembedding
         self.unembed = nn.Parameter(torch.empty((cfg.d_model, cfg.d_vocab)))
         nn.init.normal_(self.unembed, std=self.cfg.init_range)
 
@@ -31,10 +54,11 @@ class GPTWithEinops(nn.Module):
         # residual: [batch, position, d_model]
         residual = self.embed(tokens)
 
-        # Positional embeddings
-        # pos_emb: [batch, position, d_model]
-        # residual: [batch, position, d_model]
-        residual = residual + self.pos_embed(tokens)
+        # Positional embeddings (GPT only)
+        if self.pos_embed is not None:
+            # pos_emb: [batch, position, d_model]
+            # residual: [batch, position, d_model]
+            residual = residual + self.pos_embed(tokens)
 
         # Transformer blocks
         # Each block: [batch, position, d_model] -> [batch, position, d_model]
@@ -54,17 +78,38 @@ class GPTWithEinops(nn.Module):
         return logits
 
 
-class GPTWithoutEinops(nn.Module):
+class TransformerModelWithoutEinops(nn.Module):
+    """Generic transformer model supporting both GPT and LLaMA architectures without Einops"""
+
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+
+        # Token embeddings (same for both)
         self.embed = EmbedWithTorch(cfg)
-        self.pos_embed = PosEmbedWithoutEinops(cfg)
+
+        # Positional embeddings (only for GPT)
+        if cfg.architecture == Architecture.GPT:
+            self.pos_embed = PosEmbedWithoutEinops(cfg)
+        else:  # LLaMA - no positional embedding layer
+            self.pos_embed = None
+
+        # RoPE (only for LLaMA)
+        if cfg.architecture == Architecture.LLAMA:
+            self.rope = RoPE(cfg)
+        else:
+            self.rope = None
+
+        # Transformer blocks
         self.blocks = nn.ModuleList([
-            TransformerBlockWithoutEinops(cfg) for _ in range(cfg.n_layers)
+            create_transformer_block(cfg, use_einops=False, rope=self.rope)
+            for _ in range(cfg.n_layers)
         ])
-        self.ln_f = LayerNormWithoutEinops(cfg)
-        # unembed: [d_model, d_vocab]
+
+        # Final normalization
+        self.ln_f = create_norm_layer(cfg, use_einops=False)
+
+        # Unembedding
         self.unembed = nn.Parameter(torch.empty((cfg.d_model, cfg.d_vocab)))
         nn.init.normal_(self.unembed, std=self.cfg.init_range)
 
@@ -77,10 +122,11 @@ class GPTWithoutEinops(nn.Module):
         # residual: [batch, position, d_model]
         residual = self.embed(tokens)
 
-        # Positional embeddings
-        # pos_emb: [batch, position, d_model]
-        # residual: [batch, position, d_model]
-        residual = residual + self.pos_embed(tokens)
+        # Positional embeddings (GPT only)
+        if self.pos_embed is not None:
+            # pos_emb: [batch, position, d_model]
+            # residual: [batch, position, d_model]
+            residual = residual + self.pos_embed(tokens)
 
         # Transformer blocks
         # Each block: [batch, position, d_model] -> [batch, position, d_model]
@@ -98,3 +144,9 @@ class GPTWithoutEinops(nn.Module):
         logits = torch.matmul(residual, self.unembed)
 
         return logits
+
+
+# Backward compatibility aliases
+GPTWithEinops = TransformerModelWithEinops
+GPTWithoutEinops = TransformerModelWithoutEinops
+

@@ -1,6 +1,6 @@
-# GPT from Scratch: A Complete Implementation Guide
+# GPT & LLaMA from Scratch: A Complete Implementation Guide
 
-This repository contains a complete, educational implementation of a GPT (Generative Pre-trained Transformer) model from scratch in PyTorch. It's designed for learning, with detailed explanations, shape annotations, and both "einops" and "without einops" versions of each component.
+This repository contains a complete, educational implementation of GPT and LLaMA transformer models from scratch in PyTorch. It's designed for learning, with detailed explanations, shape annotations, and both "einops" and "without einops" versions of each component. Supports both GPT-2 style and LLaMA architectures.
 
 ## Table of Contents
 
@@ -17,13 +17,21 @@ This repository contains a complete, educational implementation of a GPT (Genera
 
 ## Project Overview
 
-This is a **pre-training** implementation - we train a GPT model from scratch on text data using next-token prediction (autoregressive language modeling). The model learns general language patterns, grammar, and style from the training corpus.
+This is a **pre-training** implementation - we train transformer models from scratch on text data using next-token prediction (autoregressive language modeling). The model learns general language patterns, grammar, and style from the training corpus.
+
+**Supported Architectures:**
+- **GPT-2 style**: Learned positional embeddings, LayerNorm, GELU activation
+- **LLaMA style**: RoPE (Rotary Position Embedding), RMSNorm, SwiGLU activation
+
+Switch between architectures by setting `MODEL_ARCHITECTURE = "GPT"` or `"LLAMA"` in `train.py`.
 
 **What this is:**
 - ✅ Pre-training (unsupervised learning on raw text)
 - ✅ Next-token prediction (autoregressive language modeling)
 - ✅ Complete GPT architecture implementation
+- ✅ Complete LLaMA architecture implementation
 - ✅ Educational codebase with detailed comments
+- ✅ Supports both GPT and LLaMA via architecture flag
 
 **What this is NOT:**
 - ❌ Fine-tuning (task-specific adaptation)
@@ -37,15 +45,17 @@ This is a **pre-training** implementation - we train a GPT model from scratch on
 
 ```
 .
-├── config.py              # Model architecture configuration (GPTConfig)
+├── config.py              # Model architecture configuration (ModelConfig)
 ├── training_args.py        # Training hyperparameters (TransformerTrainingArgs)
-├── layernorm.py           # Layer normalization (3 versions)
+├── layernorm.py           # Layer normalization (3 versions: GPT style)
+├── rmsnorm.py             # RMS normalization (2 versions: LLaMA style)
 ├── embed.py               # Token embeddings (2 versions)
-├── positional_embedding.py # Positional embeddings (2 versions)
-├── attention.py           # Multi-head self-attention (2 versions)
-├── mlp.py                 # Feedforward network (2 versions)
-├── transformer_block.py    # Transformer block (2 versions)
-├── gpt.py                 # Full GPT model (2 versions)
+├── positional_embedding.py # Positional embeddings (2 versions: GPT style)
+├── rope.py                # Rotary Position Embedding (LLaMA style)
+├── attention.py           # Multi-head self-attention (2 versions, supports RoPE)
+├── mlp.py                 # Feedforward network (GELU & SwiGLU, 2 versions each)
+├── transformer_block.py    # Transformer block (2 versions, architecture-agnostic)
+├── model.py               # Full transformer model (GPT & LLaMA, 2 versions each)
 ├── tokenizer.py           # Tokenization (multiple types)
 ├── dataset.py             # Dataset creation and splitting
 ├── trainer.py             # Training loop and evaluation
@@ -54,6 +64,67 @@ This is a **pre-training** implementation - we train a GPT model from scratch on
 ├── infer.py               # Inference script (loads from checkpoint)
 └── training.txt           # Training data
 ```
+
+---
+
+## GPT vs LLaMA: Architecture Differences
+
+This codebase supports both GPT-2 style and LLaMA architectures. Here are the key differences:
+
+### Positional Encoding
+
+**GPT-2:**
+- **Learned positional embeddings**: Fixed embeddings for each position (0, 1, 2, ...)
+- Stored as `nn.Parameter` matrix `[n_ctx, d_model]`
+- Added directly to token embeddings: `final_emb = token_emb + pos_emb`
+
+**LLaMA:**
+- **RoPE (Rotary Position Embedding)**: Computed on-the-fly, not learned
+- Applied to Q and K vectors in attention, not added to embeddings
+- Rotates query/key vectors by position-dependent angles
+- Encodes relative positions through rotations
+
+### Normalization
+
+**GPT-2:**
+- **LayerNorm**: Normalizes by subtracting mean, then scaling
+- Formula: `(x - mean) / std * γ + β`
+- Has both scale (γ) and bias (β) parameters
+
+**LLaMA:**
+- **RMSNorm**: Normalizes by scaling only (no mean subtraction, no bias)
+- Formula: `x / sqrt(mean(x²) + ε) * γ`
+- Only has scale (γ) parameter, simpler and faster
+
+### Activation Function
+
+**GPT-2:**
+- **GELU** in MLP: `GELU(x) = x * Φ(x)` where Φ is CDF of standard normal
+- Uses 2 weight matrices: `W_in` and `W_out`
+
+**LLaMA:**
+- **SwiGLU** in MLP: `SwiGLU(x) = Swish(W_gate @ x) * (W_up @ x)`
+- Uses 3 weight matrices: `W_gate`, `W_up`, and `W_out`
+- Gated architecture allows more expressive transformations
+
+### Summary Table
+
+| Component | GPT-2 | LLaMA |
+|-----------|-------|-------|
+| Positional Encoding | Learned embeddings | RoPE (rotary) |
+| Normalization | LayerNorm | RMSNorm |
+| MLP Activation | GELU | SwiGLU |
+| MLP Weights | 2 matrices | 3 matrices |
+
+### How to Switch
+
+In `train.py`, simply change:
+```python
+MODEL_ARCHITECTURE = "GPT"   # For GPT-2 style
+MODEL_ARCHITECTURE = "LLAMA" # For LLaMA style
+```
+
+The code automatically selects the correct components based on this flag.
 
 ---
 
@@ -126,7 +197,9 @@ output = einops.einsum(
 
 ## Core Components Deep Dive
 
-### 1. Layer Normalization (`layernorm.py`)
+### 1. Normalization Layers
+
+#### Layer Normalization (`layernorm.py`) - GPT Style
 
 **Purpose**: Normalize activations across the feature dimension to stabilize training.
 
@@ -182,6 +255,42 @@ Output: [batch, posn, d_model]  # After scale and shift
 
 ---
 
+#### RMS Normalization (`rmsnorm.py`) - LLaMA Style
+
+**Purpose**: Simpler normalization used in LLaMA (no mean subtraction, no bias).
+
+**Key Difference from LayerNorm:**
+- LayerNorm: `(x - mean) / std * γ + β` (centers then scales)
+- RMSNorm: `x / rms * γ` (only scales, no centering, no bias)
+
+**Implementation:**
+```python
+# Compute RMS (Root Mean Square)
+rms = sqrt(mean(x²) + eps)  # [batch, posn, 1]
+
+# Normalize
+norm = x / rms  # [batch, posn, d_model]
+
+# Apply scale (no bias)
+output = norm * w  # [batch, posn, d_model]
+```
+
+**Why RMSNorm?**
+- Simpler (fewer operations)
+- No bias term needed
+- Works well in practice
+- Used in LLaMA, PaLM, and other modern models
+
+**Shape Flow:**
+```
+Input:  [batch, posn, d_model]
+RMS:    [batch, posn, 1]        # RMS over d_model
+Normalized: [batch, posn, d_model]
+Output: [batch, posn, d_model]  # After scale only
+```
+
+---
+
 ### 2. Token Embeddings (`embed.py`)
 
 **Purpose**: Convert token IDs (integers) into dense vector representations.
@@ -222,7 +331,9 @@ Output: [batch, position, d_model]  # e.g., [[emb[5], emb[10], emb[3]]]
 
 ---
 
-### 3. Positional Embeddings (`positional_embedding.py`)
+### 3. Positional Encoding
+
+#### Learned Positional Embeddings (`positional_embedding.py`) - GPT Style
 
 **Purpose**: Add information about token positions in the sequence.
 
@@ -267,6 +378,54 @@ Repeat: [batch, seq_len, d_model]  # e.g., [32, 128, 256]
 - Transformers have no inherent notion of sequence order
 - Positional embeddings encode "this token is at position 5"
 - Added to token embeddings: `final_emb = token_emb + pos_emb`
+
+#### Rotary Position Embedding (`rope.py`) - LLaMA Style
+
+**Purpose**: Encode positions through rotations of query and key vectors (not learned, computed on-the-fly).
+
+**Key Concepts:**
+- **Not added to embeddings**: Applied directly to Q and K in attention
+- **Rotation-based**: Rotates each dimension pair by position-dependent angles
+- **Relative positions**: Encodes relative distances between tokens
+
+**How it works:**
+1. Split Q/K into pairs: `[d_head] → [d_head/2 pairs]`
+2. For each pair `(x_i, x_i+1)`, compute rotation angle: `θ_i * position`
+3. Apply rotation matrix:
+   ```
+   [cos(θ)  -sin(θ)]  [x_i  ]
+   [sin(θ)   cos(θ)]  [x_i+1]
+   ```
+4. Different frequencies for different dimensions: `θ_i = 10000^(-2i/d_head)`
+
+**Implementation:**
+```python
+# Pre-compute frequencies
+freqs = 1.0 / (theta ** (arange(0, d_head, 2) / d_head))
+
+# For each position, compute rotation angles
+angles = positions * freqs  # [seq, d_head/2]
+
+# Rotate Q and K
+q_rotated, k_rotated = apply_rotation(q, k, angles)
+```
+
+**Why RoPE?**
+- Encodes relative positions naturally
+- Extrapolates to longer sequences better than learned embeddings
+- Applied in attention (not embeddings), so more flexible
+- Used in LLaMA, PaLM, and other modern models
+
+**Shape Flow:**
+```
+Q/K: [batch, seq, n_heads, d_head]
+  ↓
+Reshape to pairs: [batch, seq, n_heads, d_head/2, 2]
+  ↓
+Rotate each pair: [batch, seq, n_heads, d_head/2, 2]
+  ↓
+Reshape back: [batch, seq, n_heads, d_head]
+```
 
 ---
 
@@ -398,11 +557,21 @@ Final: [batch, seq, d_model]  (after projection)
 
 **Purpose**: Apply pointwise non-linear transformations to each position independently.
 
-#### Architecture
+#### GPT Architecture (GELU)
 
 ```
 Input → Linear(d_model → d_mlp) → GELU → Linear(d_mlp → d_model) → Output
 ```
+
+Uses 2 weight matrices: `W_in` and `W_out`
+
+#### LLaMA Architecture (SwiGLU)
+
+```
+Input → [Gate Branch: Linear → Swish] × [Up Branch: Linear] → Linear(d_mlp → d_model) → Output
+```
+
+Uses 3 weight matrices: `W_gate`, `W_up`, and `W_out`
 
 #### `MLPWithEinops`
 
@@ -440,11 +609,27 @@ output = einops.einsum(
 - Used in GPT, BERT, and modern transformers
 - Formula: `GELU(x) = x * Φ(x)` where Φ is CDF of standard normal
 
-**Shape Flow:**
+**SwiGLU (LLaMA):**
+- **Swish activation**: `Swish(x) = x * sigmoid(x)` (also called SiLU)
+- **Gated architecture**: `SwiGLU(x) = Swish(W_gate @ x) * (W_up @ x)`
+- Element-wise multiplication gates the information flow
+- More expressive than GELU, allows model to control information flow
+- Used in LLaMA, PaLM, and other modern models
+
+**Shape Flow (GELU):**
 ```
 Input: [batch, posn, d_model]  # e.g., [32, 128, 256]
 Expand: [batch, posn, d_mlp]  # e.g., [32, 128, 1024]
 Activate: [batch, posn, d_mlp]  # GELU (element-wise)
+Project: [batch, posn, d_model]  # e.g., [32, 128, 256]
+```
+
+**Shape Flow (SwiGLU):**
+```
+Input: [batch, posn, d_model]  # e.g., [32, 128, 256]
+Gate: [batch, posn, d_mlp]  # Swish(W_gate @ x)
+Up: [batch, posn, d_mlp]  # W_up @ x
+Hidden: [batch, posn, d_mlp]  # gate * up (element-wise)
 Project: [batch, posn, d_model]  # e.g., [32, 128, 256]
 ```
 
@@ -521,22 +706,21 @@ Output: [batch, posn, d_model]
 
 ---
 
-### 7. Full GPT Model (`gpt.py`)
+### 7. Full Transformer Model (`model.py`)
 
-**Purpose**: Stack all components into a complete language model.
+**Purpose**: Stack all components into a complete language model supporting both GPT and LLaMA architectures.
 
 #### Architecture Flow
 
+**GPT Architecture:**
 ```
 Tokens [batch, position]
   ↓
 Token Embeddings → [batch, position, d_model]
   ↓
-+ Positional Embeddings → [batch, position, d_model]
++ Learned Positional Embeddings → [batch, position, d_model]
   ↓
 Transformer Block 1 → [batch, position, d_model]
-  ↓
-Transformer Block 2 → [batch, position, d_model]
   ↓
 ...
   ↓
@@ -547,7 +731,28 @@ Final LayerNorm → [batch, position, d_model]
 Unembedding → [batch, position, d_vocab] (logits)
 ```
 
+**LLaMA Architecture:**
+```
+Tokens [batch, position]
+  ↓
+Token Embeddings → [batch, position, d_model]
+  ↓
+(No positional embedding layer - RoPE applied in attention)
+  ↓
+Transformer Block 1 (with RoPE) → [batch, position, d_model]
+  ↓
+...
+  ↓
+Transformer Block N (with RoPE) → [batch, position, d_model]
+  ↓
+Final RMSNorm → [batch, position, d_model]
+  ↓
+Unembedding → [batch, position, d_vocab] (logits)
+```
+
 #### Implementation
+
+The model automatically selects components based on `cfg.architecture`:
 
 ```python
 def forward(self, tokens):
@@ -556,20 +761,19 @@ def forward(self, tokens):
     # Token embeddings
     residual = self.embed(tokens)  # [batch, position, d_model]
     
-    # Add positional embeddings
-    residual = residual + self.pos_embed(tokens)  # [batch, position, d_model]
+    # Positional embeddings (GPT only)
+    if self.pos_embed is not None:  # GPT
+        residual = residual + self.pos_embed(tokens)
+    # LLaMA: RoPE is applied inside attention blocks
     
     # Pass through transformer blocks
     for block in self.blocks:
         residual = block(residual)  # [batch, position, d_model]
     
-    # Final layer norm
+    # Final normalization (LayerNorm for GPT, RMSNorm for LLaMA)
     residual = self.ln_f(residual)  # [batch, position, d_model]
     
     # Unembedding to logits
-    # residual: [batch, position, d_model]
-    # unembed: [d_model, d_vocab]
-    # logits: [batch, position, d_vocab]
     logits = torch.matmul(residual, self.unembed)
     
     return logits
@@ -577,11 +781,22 @@ def forward(self, tokens):
 
 **Key Components**:
 
-1. **Embedding**: `[batch, position] → [batch, position, d_model]`
-2. **Positional Embedding**: `[batch, position] → [batch, position, d_model]`
+1. **Embedding**: `[batch, position] → [batch, position, d_model]` (same for both)
+2. **Positional Encoding**:
+   - **GPT**: Learned positional embeddings added to token embeddings
+   - **LLaMA**: RoPE (Rotary Position Embedding) applied to Q/K in attention
 3. **Transformer Blocks**: `[batch, position, d_model] → [batch, position, d_model]` (N times)
-4. **Final LayerNorm**: Stabilizes before unembedding
-5. **Unembedding**: `[batch, position, d_model] → [batch, position, d_vocab]`
+   - **GPT**: LayerNorm + GELU MLP
+   - **LLaMA**: RMSNorm + SwiGLU MLP + RoPE in attention
+4. **Final Normalization**:
+   - **GPT**: LayerNorm
+   - **LLaMA**: RMSNorm
+5. **Unembedding**: `[batch, position, d_model] → [batch, position, d_vocab]` (same for both)
+
+**Architecture Selection**:
+- Set `cfg.architecture = Architecture.GPT` for GPT-style model
+- Set `cfg.architecture = Architecture.LLAMA` for LLaMA-style model
+- Model automatically uses correct components (LayerNorm vs RMSNorm, GELU vs SwiGLU, etc.)
 
 **Unembedding Explained**:
 - `unembed` is a learned matrix `[d_model, d_vocab]`
@@ -675,7 +890,7 @@ optimizer.step()
 
 ### 3. Configuration (`config.py`, `training_args.py`)
 
-#### `GPTConfig` - Model Architecture
+#### `ModelConfig` - Model Architecture
 - `d_model`: Hidden dimension (e.g., 256, 768)
 - `n_layers`: Number of transformer blocks (e.g., 4, 12)
 - `n_heads`: Number of attention heads (e.g., 4, 12)
@@ -769,17 +984,29 @@ uv run train.py
 2. Creates tokenizer and dataset
 3. Initializes model
 4. Trains for specified epochs
-5. Saves checkpoints to `checkpoints/`
+5. Saves checkpoints to `checkpoints/YYYYMMDDHHMMSS/` (timestamped folders)
 
 **Configuration**:
-- Edit `train.py` to change model size, tokenizer, etc.
+- Edit `train.py` to change model size, architecture, etc.
 - Edit `training_args.py` to change hyperparameters
+
+**Tokenizer Selection**:
+You can choose between different tokenizers by setting `TOKENIZER_TYPE` in `train.py`:
+```python
+TOKENIZER_TYPE = "character"      # Character-level tokenization (simple, fast)
+TOKENIZER_TYPE = "bpe"            # Byte Pair Encoding (subword tokens)
+TOKENIZER_TYPE = "sentencepiece" # SentencePiece tokenization
+```
+
+- **Character-level**: Each character is a token. Simple but large vocabulary.
+- **BPE**: Learns subword units. Good balance of vocabulary size and efficiency.
+- **SentencePiece**: Similar to BPE but handles whitespace differently. Often used in multilingual models.
 
 ### Inference
 
 ```bash
 # Generate text from trained model
-uv run infer.py --checkpoint checkpoints/final_model.pt --prompt "First Citizen:"
+uv run infer.py --checkpoint checkpoints/20240101120000/final_model.pt --prompt "First Citizen:"
 ```
 
 **What happens**:
@@ -789,7 +1016,7 @@ uv run infer.py --checkpoint checkpoints/final_model.pt --prompt "First Citizen:
 4. Prints generated text
 
 **Options**:
-- `--checkpoint`: Path to model checkpoint
+- `--checkpoint`: Path to model checkpoint (e.g., `checkpoints/20240101120000/final_model.pt`)
 - `--prompt`: Starting text prompt
 - `--max_new_tokens`: Number of tokens to generate
 - `--temperature`: Sampling temperature
@@ -866,11 +1093,10 @@ At each position, we predict what comes next.
 ## Next Steps
 
 1. **Experiment with hyperparameters**: Try different learning rates, model sizes, etc.
-2. **Try different tokenizers**: Compare character-level vs BPE vs SentencePiece
-3. **Add features**: Learning rate scheduling, gradient clipping, etc.
-4. **Scale up**: Train on larger datasets, use more GPUs
-5. **Fine-tuning**: Adapt model to specific tasks
-6. **Mechanistic interpretability**: Understand what the model learned
+2. **Add features**: Learning rate scheduling, gradient clipping, etc.
+3. **Scale up**: Train on larger datasets, use more GPUs
+4. **Fine-tuning**: Adapt model to specific tasks
+5. **Mechanistic interpretability**: Understand what the model learned
 
 ---
 

@@ -3,11 +3,13 @@
 # ///
 
 import torch
-from config import GPTConfig
+import os
+from datetime import datetime
+from config import ModelConfig, Architecture
 from training_args import TransformerTrainingArgs
 from trainer import TransformerTrainer
 from dataset import TransformerDataset
-from gpt import GPTWithEinops, GPTWithoutEinops
+from model import TransformerModelWithEinops, TransformerModelWithoutEinops
 
 device = torch.device(
     "mps" if torch.backends.mps.is_available(
@@ -19,19 +21,29 @@ print(f"Using device: {device}")
 with open("training.txt", "r", encoding="utf-8") as f:
     text = f.read()
 
-# Initialize config
-# Use GPTConfig.small() for faster training on Mac, GPTConfig() for full model
-USE_SMALL_MODEL = True  # Set to False for full GPT-2 size model
+# Architecture selection
+MODEL_ARCHITECTURE = "GPT"  # Options: "GPT", "LLAMA"
+USE_EINOPS = True  # Use einops versions
+USE_SMALL_MODEL = True  # Set to False for full model size
 
-if USE_SMALL_MODEL:
-    cfg = GPTConfig.small()
-    print("Using SMALL model config (faster for Mac)")
-else:
-    cfg = GPTConfig()
-    print("Using FULL model config (GPT-2 size)")
+# Initialize config based on architecture
+if MODEL_ARCHITECTURE == "LLAMA":
+    if USE_SMALL_MODEL:
+        cfg = ModelConfig.llama_small()
+        print("Using SMALL LLaMA config (faster for Mac)")
+    else:
+        cfg = ModelConfig.llama_full()
+        print("Using FULL LLaMA config")
+else:  # GPT
+    if USE_SMALL_MODEL:
+        cfg = ModelConfig.gpt_small()
+        print("Using SMALL GPT config (faster for Mac)")
+    else:
+        cfg = ModelConfig.gpt_full()
+        print("Using FULL GPT config (GPT-2 size)")
 
 # Create dataset
-TOKENIZER_TYPE = "bpe"
+TOKENIZER_TYPE = "character"
 dataset = TransformerDataset(text, cfg, tokenizer_type=TOKENIZER_TYPE)
 dataset.print_info()
 
@@ -43,15 +55,15 @@ X_val, Y_val = dataset.get_val_data()
 cfg = dataset.cfg
 
 # Initialize model
-MODEL_TYPE = "with_einops"  # Options: "with_einops", "without_einops"
-
-if MODEL_TYPE == "with_einops":
-    model = GPTWithEinops(cfg)
+if USE_EINOPS:
+    model = TransformerModelWithEinops(cfg)
+    model_type_str = "with_einops"
 else:
-    model = GPTWithoutEinops(cfg)
+    model = TransformerModelWithoutEinops(cfg)
+    model_type_str = "without_einops"
 
 model = model.to(device)
-print(f"\nInitialized {MODEL_TYPE} model")
+print(f"\nInitialized {MODEL_ARCHITECTURE} model ({model_type_str})")
 print(f"Model on device: {next(model.parameters()).device}")
 print(
     f"Model parameters: {sum(p.numel() for p in model.parameters())/1e6:.2f}M")
@@ -62,6 +74,13 @@ args = TransformerTrainingArgs()
 if USE_SMALL_MODEL:
     args.eval_iters = 50  # Faster evaluation for small model
     args.batch_size = 16  # Smaller batch for Mac memory
+
+# Create timestamped checkpoint directory
+timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+checkpoint_dir = os.path.join("checkpoints", timestamp)
+args.save_dir = checkpoint_dir
+os.makedirs(checkpoint_dir, exist_ok=True)
+print(f"\nCheckpoints will be saved to: {checkpoint_dir}")
 
 # Create trainer
 trainer = TransformerTrainer(
@@ -80,7 +99,8 @@ trainer.train()
 print("\n" + "=" * 50)
 print("Training complete!")
 print("=" * 50)
-print(f"Model saved to: {args.save_dir}/final_model.pt")
+final_model_path = os.path.join(args.save_dir, "final_model.pt")
+print(f"Model saved to: {final_model_path}")
 print("\nTo generate text, run:")
 print(
-    f"  uv run infer.py --checkpoint {args.save_dir}/final_model.pt --prompt 'Your prompt here'")
+    f"  uv run infer.py --checkpoint {final_model_path} --prompt 'Your prompt here'")

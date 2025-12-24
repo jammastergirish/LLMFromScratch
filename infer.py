@@ -6,8 +6,8 @@
 
 import argparse
 import torch
-from config import GPTConfig
-from gpt import GPTWithEinops, GPTWithoutEinops
+from config import ModelConfig
+from model import TransformerModelWithEinops, TransformerModelWithoutEinops
 from tokenizer import CharacterTokenizer, BPETokenizer
 from sampler import TransformerSampler
 
@@ -30,20 +30,20 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
     if cfg is None:
         # Fallback: use default config
         print("Warning: No config in checkpoint, using default")
-        cfg = GPTConfig.small()
+        cfg = ModelConfig.gpt_small()
     elif isinstance(cfg, dict):
         # Reconstruct config object from dict
-        cfg = GPTConfig(**cfg)
-    # If it's already a GPTConfig object, use it directly
+        cfg = ModelConfig(**cfg)
+    # If it's already a ModelConfig object, use it directly
 
     # Determine model type from checkpoint or default
     model_type = checkpoint.get("model_type", "with_einops")
 
     # Initialize model
     if model_type == "with_einops":
-        model = GPTWithEinops(cfg)
+        model = TransformerModelWithEinops(cfg)
     else:
-        model = GPTWithoutEinops(cfg)
+        model = TransformerModelWithoutEinops(cfg)
 
     # Load weights
     model.load_state_dict(checkpoint["model_state_dict"])

@@ -85,3 +85,116 @@ class MLPWithoutEinops(nn.Module):
         output = torch.matmul(hidden, self.W_out) + self.b_out
 
         return output
+
+
+class MLPSwiGLUWithEinops(nn.Module):
+    """MLP with SwiGLU activation (LLaMA style) using Einops"""
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        # SwiGLU needs 3 weight matrices
+        # W_gate: [d_model, d_mlp] - gate branch
+        self.W_gate = nn.Parameter(torch.empty((cfg.d_model, cfg.d_mlp)))
+        # W_up: [d_model, d_mlp] - up branch
+        self.W_up = nn.Parameter(torch.empty((cfg.d_model, cfg.d_mlp)))
+        # W_out: [d_mlp, d_model] - output projection
+        self.W_out = nn.Parameter(torch.empty((cfg.d_mlp, cfg.d_model)))
+        self.b_gate = nn.Parameter(torch.zeros(cfg.d_mlp))
+        self.b_up = nn.Parameter(torch.zeros(cfg.d_mlp))
+        self.b_out = nn.Parameter(torch.zeros(cfg.d_model))
+
+        nn.init.normal_(self.W_gate, std=self.cfg.init_range)
+        nn.init.normal_(self.W_up, std=self.cfg.init_range)
+        nn.init.normal_(self.W_out, std=self.cfg.init_range)
+
+    def forward(
+        self, residual: Float[Tensor, "batch posn d_model"]
+    ) -> Float[Tensor, "batch posn d_model"]:
+        # residual: [batch, posn, d_model]
+
+        # Gate branch: Swish activation (SiLU)
+        # gate: [batch, posn, d_mlp]
+        gate = torch.nn.functional.silu(
+            einops.einsum(
+                residual, self.W_gate,
+                "batch posn d_model, d_model d_mlp -> batch posn d_mlp"
+            ) + self.b_gate
+        )  # SiLU = Swish
+
+        # Up branch: linear
+        # up: [batch, posn, d_mlp]
+        up = einops.einsum(
+            residual, self.W_up,
+            "batch posn d_model, d_model d_mlp -> batch posn d_mlp"
+        ) + self.b_up
+
+        # Element-wise multiply (gating)
+        # hidden: [batch, posn, d_mlp]
+        hidden = gate * up
+
+        # Output projection
+        # output: [batch, posn, d_model]
+        output = einops.einsum(
+            hidden, self.W_out,
+            "batch posn d_mlp, d_mlp d_model -> batch posn d_model"
+        ) + self.b_out
+
+        return output
+
+
+class MLPSwiGLUWithoutEinops(nn.Module):
+    """MLP with SwiGLU activation (LLaMA style) without Einops"""
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.W_gate = nn.Parameter(torch.empty((cfg.d_model, cfg.d_mlp)))
+        self.W_up = nn.Parameter(torch.empty((cfg.d_model, cfg.d_mlp)))
+        self.W_out = nn.Parameter(torch.empty((cfg.d_mlp, cfg.d_model)))
+        self.b_gate = nn.Parameter(torch.zeros(cfg.d_mlp))
+        self.b_up = nn.Parameter(torch.zeros(cfg.d_mlp))
+        self.b_out = nn.Parameter(torch.zeros(cfg.d_model))
+
+        nn.init.normal_(self.W_gate, std=self.cfg.init_range)
+        nn.init.normal_(self.W_up, std=self.cfg.init_range)
+        nn.init.normal_(self.W_out, std=self.cfg.init_range)
+
+    def forward(
+        self, residual: Float[Tensor, "batch posn d_model"]
+    ) -> Float[Tensor, "batch posn d_model"]:
+        # residual: [batch, posn, d_model]
+
+        # Gate branch: Swish activation (SiLU)
+        gate = torch.nn.functional.silu(
+            torch.matmul(residual, self.W_gate) + self.b_gate
+        )  # [batch, posn, d_mlp]
+
+        # Up branch: linear
+        up = torch.matmul(residual, self.W_up) + \
+            self.b_up  # [batch, posn, d_mlp]
+
+        # Element-wise multiply (gating)
+        hidden = gate * up  # [batch, posn, d_mlp]
+
+        # Output projection
+        output = torch.matmul(hidden, self.W_out) + \
+            self.b_out  # [batch, posn, d_model]
+
+        return output
+
+
+def create_mlp_layer(cfg, use_einops=True):
+    """Factory function to create appropriate MLP layer based on architecture"""
+    from config import Architecture
+
+    if cfg.architecture == Architecture.LLAMA:
+        if use_einops:
+            return MLPSwiGLUWithEinops(cfg)
+        else:
+            return MLPSwiGLUWithoutEinops(cfg)
+    else:  # GPT
+        if use_einops:
+            return MLPWithEinops(cfg)
+        else:
+            return MLPWithoutEinops(cfg)

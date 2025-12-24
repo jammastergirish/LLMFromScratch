@@ -1,6 +1,6 @@
 import torch
 from typing import Tuple
-from config import GPTConfig
+from config import ModelConfig
 from tokenizer import (
     CharacterTokenizer,
     CharacterTokenizerWithTorch,
@@ -13,7 +13,7 @@ class TransformerDataset:
     def __init__(
         self,
         text: str,
-        cfg: GPTConfig,
+        cfg: ModelConfig,
         tokenizer_type: str = "character",
         train_split: float = 0.9,
     ):

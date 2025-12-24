@@ -6,9 +6,10 @@ from torch import Tensor
 
 
 class AttentionWithEinops(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, rope=None):
         super().__init__()
         self.cfg = cfg
+        self.rope = rope  # RoPE module (None for GPT, RoPE instance for LLaMA)
         self.W_Q = nn.Parameter(torch.empty(
             (cfg.n_heads, cfg.d_head, cfg.d_model)))
         self.W_K = nn.Parameter(torch.empty(
@@ -45,6 +46,11 @@ class AttentionWithEinops(nn.Module):
             residual, self.W_V,
             "batch posn d_model, n_heads d_head d_model -> batch posn n_heads d_head"
         )
+
+        # Apply RoPE if provided (LLaMA)
+        if self.rope is not None:
+            positions = torch.arange(seq_len, device=residual.device)
+            q, k = self.rope(q, k, positions)
 
         # Scaled dot-product attention
         # q: [batch, posn_q, n_heads, d_head]
@@ -88,9 +94,10 @@ class AttentionWithEinops(nn.Module):
 
 
 class AttentionWithoutEinops(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, rope=None):
         super().__init__()
         self.cfg = cfg
+        self.rope = rope  # RoPE module (None for GPT, RoPE instance for LLaMA)
         # W_Q, W_K, W_V: [n_heads, d_head, d_model] - per-head projection matrices
         self.W_Q = nn.Parameter(torch.empty(
             (cfg.n_heads, cfg.d_head, cfg.d_model)))
@@ -120,6 +127,11 @@ class AttentionWithoutEinops(nn.Module):
         k = torch.einsum("bpd,nhd->bpnh", residual, self.W_K)
         # v: [batch, seq_len, n_heads, d_head]
         v = torch.einsum("bpd,nhd->bpnh", residual, self.W_V)
+
+        # Apply RoPE if provided (LLaMA)
+        if self.rope is not None:
+            positions = torch.arange(seq_len, device=residual.device)
+            q, k = self.rope(q, k, positions)
 
         # Scaled dot-product attention
         # Transpose to [batch, n_heads, seq_len, d_head] for matmul

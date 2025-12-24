@@ -96,3 +96,21 @@ class LayerNormWithTorch(nn.Module):
         # residual: [batch, posn, d_model]
         # output: [batch, posn, d_model]
         return self.ln(residual)
+
+
+def create_norm_layer(cfg, use_einops=True):
+    """Factory function to create appropriate normalization layer based on architecture"""
+    from config import Architecture
+
+    if cfg.architecture == Architecture.LLAMA:
+        if use_einops:
+            from rmsnorm import RMSNormWithEinops
+            return RMSNormWithEinops(cfg)
+        else:
+            from rmsnorm import RMSNormWithoutEinops
+            return RMSNormWithoutEinops(cfg)
+    else:  # GPT
+        if use_einops:
+            return LayerNormWithEinops(cfg)
+        else:
+            return LayerNormWithoutEinops(cfg)

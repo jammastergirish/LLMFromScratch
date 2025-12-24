@@ -2,18 +2,18 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 from attention import AttentionWithEinops, AttentionWithoutEinops
-from mlp import MLPWithEinops, MLPWithoutEinops
-from layernorm import LayerNormWithEinops, LayerNormWithoutEinops
+from mlp import create_mlp_layer
+from layernorm import create_norm_layer
 
 
 class TransformerBlockWithEinops(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, rope=None):
         super().__init__()
         self.cfg = cfg
-        self.ln1 = LayerNormWithEinops(cfg)
-        self.attn = AttentionWithEinops(cfg)
-        self.ln2 = LayerNormWithEinops(cfg)
-        self.mlp = MLPWithEinops(cfg)
+        self.ln1 = create_norm_layer(cfg, use_einops=True)
+        self.attn = AttentionWithEinops(cfg, rope=rope)
+        self.ln2 = create_norm_layer(cfg, use_einops=True)
+        self.mlp = create_mlp_layer(cfg, use_einops=True)
 
     def forward(
         self, residual: Float[Tensor, "batch posn d_model"]
@@ -33,16 +33,24 @@ class TransformerBlockWithEinops(nn.Module):
         residual = residual + self.mlp(self.ln2(residual))
 
         return residual
+
+
+def create_transformer_block(cfg, use_einops=True, rope=None):
+    """Factory function to create transformer block"""
+    if use_einops:
+        return TransformerBlockWithEinops(cfg, rope=rope)
+    else:
+        return TransformerBlockWithoutEinops(cfg, rope=rope)
 
 
 class TransformerBlockWithoutEinops(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, rope=None):
         super().__init__()
         self.cfg = cfg
-        self.ln1 = LayerNormWithoutEinops(cfg)
-        self.attn = AttentionWithoutEinops(cfg)
-        self.ln2 = LayerNormWithoutEinops(cfg)
-        self.mlp = MLPWithoutEinops(cfg)
+        self.ln1 = create_norm_layer(cfg, use_einops=False)
+        self.attn = AttentionWithoutEinops(cfg, rope=rope)
+        self.ln2 = create_norm_layer(cfg, use_einops=False)
+        self.mlp = create_mlp_layer(cfg, use_einops=False)
 
     def forward(
         self, residual: Float[Tensor, "batch posn d_model"]
@@ -62,3 +70,19 @@ class TransformerBlockWithoutEinops(nn.Module):
         residual = residual + self.mlp(self.ln2(residual))
 
         return residual
+
+
+def create_transformer_block(cfg, use_einops=True, rope=None):
+    """Factory function to create transformer block"""
+    if use_einops:
+        return TransformerBlockWithEinops(cfg, rope=rope)
+    else:
+        return TransformerBlockWithoutEinops(cfg, rope=rope)
+
+
+def create_transformer_block(cfg, use_einops=True, rope=None):
+    """Factory function to create transformer block"""
+    if use_einops:
+        return TransformerBlockWithEinops(cfg, rope=rope)
+    else:
+        return TransformerBlockWithoutEinops(cfg, rope=rope)
