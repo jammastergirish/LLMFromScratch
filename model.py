@@ -41,7 +41,8 @@ class TransformerModelWithEinops(nn.Module):
 
         # Transformer blocks
         self.blocks = nn.ModuleList([
-            create_transformer_block(cfg, use_einops=True, rope=self.rope, alibi=self.alibi)
+            create_transformer_block(
+                cfg, use_einops=True, rope=self.rope, alibi=self.alibi)
             for _ in range(cfg.n_layers)
         ])
 
@@ -116,7 +117,8 @@ class TransformerModelWithoutEinops(nn.Module):
 
         # Transformer blocks
         self.blocks = nn.ModuleList([
-            create_transformer_block(cfg, use_einops=False, rope=self.rope, alibi=self.alibi)
+            create_transformer_block(
+                cfg, use_einops=False, rope=self.rope, alibi=self.alibi)
             for _ in range(cfg.n_layers)
         ])
 
@@ -163,4 +165,3 @@ class TransformerModelWithoutEinops(nn.Module):
 # Backward compatibility aliases
 GPTWithEinops = TransformerModelWithEinops
 GPTWithoutEinops = TransformerModelWithoutEinops
-

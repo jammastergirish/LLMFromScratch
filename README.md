@@ -1,6 +1,6 @@
-# GPT & LLaMA from Scratch: A Complete Implementation Guide
+# LLM from Scratch: A Complete Implementation Guide
 
-This repository contains a complete, educational implementation of GPT and LLaMA transformer models from scratch in PyTorch. It's designed for learning, with detailed explanations, shape annotations, and both "einops" and "without einops" versions of each component. Supports both GPT-2 style and LLaMA architectures.
+This repository contains a complete, educational implementation of GPT, LLaMA, and OLMo transformer models from scratch in PyTorch. It's designed for learning, with detailed explanations, shape annotations, and both "einops" and "without einops" versions of each component. Supports GPT-2, LLaMA, and OLMo architectures.
 
 ## Table of Contents
 
@@ -22,16 +22,18 @@ This is a **pre-training** implementation - we train transformer models from scr
 **Supported Architectures:**
 - **GPT-2 style**: Learned positional embeddings, LayerNorm, GELU activation
 - **LLaMA style**: RoPE (Rotary Position Embedding), RMSNorm, SwiGLU activation
+- **OLMo style**: ALiBi (Attention with Linear Biases), LayerNorm, SwiGLU activation
 
-Switch between architectures using the `--architecture` command-line argument in `train.py` (e.g., `--architecture LLAMA`).
+Switch between architectures using the `--architecture` command-line argument in `train.py` (e.g., `--architecture LLAMA` or `--architecture OLMO`).
 
 **What this is:**
 - ✅ Pre-training (unsupervised learning on raw text)
 - ✅ Next-token prediction (autoregressive language modeling)
 - ✅ Complete GPT architecture implementation
 - ✅ Complete LLaMA architecture implementation
+- ✅ Complete OLMo architecture implementation
 - ✅ Educational codebase with detailed comments
-- ✅ Supports both GPT and LLaMA via architecture flag
+- ✅ Supports GPT, LLaMA, and OLMo via architecture flag
 
 **What this is NOT:**
 - ❌ Fine-tuning (task-specific adaptation)
@@ -52,10 +54,11 @@ Switch between architectures using the `--architecture` command-line argument in
 ├── embed.py               # Token embeddings (2 versions)
 ├── positional_embedding.py # Positional embeddings (2 versions: GPT style)
 ├── rope.py                # Rotary Position Embedding (LLaMA style)
-├── attention.py           # Multi-head self-attention (2 versions, supports RoPE)
+├── alibi.py               # ALiBi - Attention with Linear Biases (OLMo style)
+├── attention.py           # Multi-head self-attention (2 versions, supports RoPE & ALiBi)
 ├── mlp.py                 # Feedforward network (GELU & SwiGLU, 2 versions each)
 ├── transformer_block.py    # Transformer block (2 versions, architecture-agnostic)
-├── model.py               # Full transformer model (GPT & LLaMA, 2 versions each)
+├── model.py               # Full transformer model (GPT, LLaMA & OLMo, 2 versions each)
 ├── tokenizer.py           # Tokenization (multiple types)
 ├── dataset.py             # Dataset creation and splitting
 ├── trainer.py             # Training loop and evaluation
@@ -67,9 +70,9 @@ Switch between architectures using the `--architecture` command-line argument in
 
 ---
 
-## GPT vs LLaMA: Architecture Differences
+## Architecture Comparison: GPT vs LLaMA vs OLMo
 
-This codebase supports both GPT-2 style and LLaMA architectures. Here are the key differences:
+This codebase supports GPT-2, LLaMA, and OLMo architectures. Here are the key differences:
 
 ### Positional Encoding
 
@@ -84,6 +87,12 @@ This codebase supports both GPT-2 style and LLaMA architectures. Here are the ke
 - Rotates query/key vectors by position-dependent angles
 - Encodes relative positions through rotations
 
+**OLMo:**
+- **ALiBi (Attention with Linear Biases)**: Adds distance-based bias to attention scores
+- No positional embeddings or rotations
+- Bias is `-slope * distance` where slope decreases per head
+- Simpler than RoPE, extrapolates well to longer sequences
+
 ### Normalization
 
 **GPT-2:**
@@ -96,6 +105,11 @@ This codebase supports both GPT-2 style and LLaMA architectures. Here are the ke
 - Formula: `x / sqrt(mean(x²) + ε) * γ`
 - Only has scale (γ) parameter, simpler and faster
 
+**OLMo:**
+- **LayerNorm**: Same as GPT (normalizes by subtracting mean, then scaling)
+- Formula: `(x - mean) / std * γ + β`
+- Has both scale (γ) and bias (β) parameters
+
 ### Activation Function
 
 **GPT-2:**
@@ -107,14 +121,19 @@ This codebase supports both GPT-2 style and LLaMA architectures. Here are the ke
 - Uses 3 weight matrices: `W_gate`, `W_up`, and `W_out`
 - Gated architecture allows more expressive transformations
 
+**OLMo:**
+- **SwiGLU** in MLP: Same as LLaMA
+- Uses 3 weight matrices: `W_gate`, `W_up`, and `W_out`
+- Gated architecture allows more expressive transformations
+
 ### Summary Table
 
-| Component | GPT-2 | LLaMA |
-|-----------|-------|-------|
-| Positional Encoding | Learned embeddings | RoPE (rotary) |
-| Normalization | LayerNorm | RMSNorm |
-| MLP Activation | GELU | SwiGLU |
-| MLP Weights | 2 matrices | 3 matrices |
+| Component | GPT-2 | LLaMA | OLMo |
+|-----------|-------|-------|------|
+| Positional Encoding | Learned embeddings | RoPE (rotary) | ALiBi (linear biases) |
+| Normalization | LayerNorm | RMSNorm | LayerNorm |
+| MLP Activation | GELU | SwiGLU | SwiGLU |
+| MLP Weights | 2 matrices | 3 matrices | 3 matrices |
 
 ### How to Switch
 
@@ -122,6 +141,7 @@ Use the `--architecture` command-line argument:
 ```bash
 uv run train.py --architecture GPT    # For GPT-2 style
 uv run train.py --architecture LLAMA  # For LLaMA style
+uv run train.py --architecture OLMO   # For OLMo style
 ```
 
 The code automatically selects the correct components based on the architecture flag.
@@ -427,6 +447,60 @@ Rotate each pair: [batch, seq, n_heads, d_head/2, 2]
 Reshape back: [batch, seq, n_heads, d_head]
 ```
 
+#### ALiBi - Attention with Linear Biases (`alibi.py`) - OLMo Style
+
+**Purpose**: Encode positions through linear biases added to attention scores (not learned, computed on-the-fly).
+
+**Key Concepts:**
+- **Not added to embeddings**: Applied directly to attention scores
+- **Distance-based**: Bias depends on distance between positions
+- **Per-head slopes**: Each attention head gets a different slope
+- **No learned parameters**: All computed from fixed formulas
+
+**How it works:**
+1. Compute distance matrix: `distance[i, j] = |i - j|`
+2. For each head `h`, compute slope: `slope[h] = 2^(-8/n_heads * h)`
+3. Apply bias: `bias[h, i, j] = -slope[h] * distance[i, j]` for future positions
+4. Add bias to attention scores before softmax
+
+**Implementation:**
+```python
+# Pre-compute slopes for each head
+slopes = 2^(-8/n_heads * [1, 2, ..., n_heads])  # [n_heads]
+
+# Compute distance matrix
+distance = |pos_i - pos_j|  # [seq_len, seq_len]
+
+# Apply slopes
+bias = -slopes.unsqueeze(-1).unsqueeze(-1) * distance.unsqueeze(0)  # [n_heads, seq_len, seq_len]
+
+# Add to attention scores
+attn_scores = attn_scores + bias
+```
+
+**Why ALiBi?**
+- Simpler than RoPE (no rotations, just addition)
+- Extrapolates extremely well to longer sequences
+- Each head learns different distance preferences
+- Used in OLMo and other modern models
+- No learned parameters, so more efficient
+
+**Shape Flow:**
+```
+Attention scores: [batch, n_heads, seq_len, seq_len]
+  ↓
+ALiBi bias: [n_heads, seq_len, seq_len]
+  ↓
+Add bias: [batch, n_heads, seq_len, seq_len]
+  ↓
+Softmax: [batch, n_heads, seq_len, seq_len]
+```
+
+**Key Insight:**
+- Closer positions get less negative bias (can attend more)
+- Farther positions get more negative bias (attend less)
+- This naturally implements causal attention without explicit masking (though we still mask for numerical stability)
+
 ---
 
 ### 4. Multi-Head Self-Attention (`attention.py`)
@@ -708,7 +782,7 @@ Output: [batch, posn, d_model]
 
 ### 7. Full Transformer Model (`model.py`)
 
-**Purpose**: Stack all components into a complete language model supporting both GPT and LLaMA architectures.
+**Purpose**: Stack all components into a complete language model supporting GPT, LLaMA, and OLMo architectures.
 
 #### Architecture Flow
 
@@ -750,6 +824,25 @@ Final RMSNorm → [batch, position, d_model]
 Unembedding → [batch, position, d_vocab] (logits)
 ```
 
+**OLMo Architecture:**
+```
+Tokens [batch, position]
+  ↓
+Token Embeddings → [batch, position, d_model]
+  ↓
+(No positional embedding layer - ALiBi applied in attention)
+  ↓
+Transformer Block 1 (with ALiBi) → [batch, position, d_model]
+  ↓
+...
+  ↓
+Transformer Block N (with ALiBi) → [batch, position, d_model]
+  ↓
+Final LayerNorm → [batch, position, d_model]
+  ↓
+Unembedding → [batch, position, d_vocab] (logits)
+```
+
 #### Implementation
 
 The model automatically selects components based on `cfg.architecture`:
@@ -765,12 +858,13 @@ def forward(self, tokens):
     if self.pos_embed is not None:  # GPT
         residual = residual + self.pos_embed(tokens)
     # LLaMA: RoPE is applied inside attention blocks
+    # OLMo: ALiBi is applied inside attention blocks
     
     # Pass through transformer blocks
     for block in self.blocks:
         residual = block(residual)  # [batch, position, d_model]
     
-    # Final normalization (LayerNorm for GPT, RMSNorm for LLaMA)
+    # Final normalization (LayerNorm for GPT/OLMo, RMSNorm for LLaMA)
     residual = self.ln_f(residual)  # [batch, position, d_model]
     
     # Unembedding to logits
@@ -781,22 +875,26 @@ def forward(self, tokens):
 
 **Key Components**:
 
-1. **Embedding**: `[batch, position] → [batch, position, d_model]` (same for both)
+1. **Embedding**: `[batch, position] → [batch, position, d_model]` (same for all)
 2. **Positional Encoding**:
    - **GPT**: Learned positional embeddings added to token embeddings
    - **LLaMA**: RoPE (Rotary Position Embedding) applied to Q/K in attention
+   - **OLMo**: ALiBi (Attention with Linear Biases) added to attention scores
 3. **Transformer Blocks**: `[batch, position, d_model] → [batch, position, d_model]` (N times)
    - **GPT**: LayerNorm + GELU MLP
    - **LLaMA**: RMSNorm + SwiGLU MLP + RoPE in attention
+   - **OLMo**: LayerNorm + SwiGLU MLP + ALiBi in attention
 4. **Final Normalization**:
    - **GPT**: LayerNorm
    - **LLaMA**: RMSNorm
-5. **Unembedding**: `[batch, position, d_model] → [batch, position, d_vocab]` (same for both)
+   - **OLMo**: LayerNorm
+5. **Unembedding**: `[batch, position, d_model] → [batch, position, d_vocab]` (same for all)
 
 **Architecture Selection**:
 - Set `cfg.architecture = Architecture.GPT` for GPT-style model
 - Set `cfg.architecture = Architecture.LLAMA` for LLaMA-style model
-- Model automatically uses correct components (LayerNorm vs RMSNorm, GELU vs SwiGLU, etc.)
+- Set `cfg.architecture = Architecture.OLMO` for OLMo-style model
+- Model automatically uses correct components (LayerNorm vs RMSNorm, GELU vs SwiGLU, RoPE vs ALiBi, etc.)
 
 **Unembedding Explained**:
 - `unembed` is a learned matrix `[d_model, d_vocab]`
@@ -981,6 +1079,9 @@ uv run train.py
 # Train LLaMA model
 uv run train.py --architecture LLAMA
 
+# Train OLMo model
+uv run train.py --architecture OLMO
+
 # Train full-size GPT model
 uv run train.py --model_size full
 
@@ -992,10 +1093,11 @@ uv run train.py --no_einops
 
 # Combine options
 uv run train.py --architecture LLAMA --model_size full --tokenizer_type bpe
+uv run train.py --architecture OLMO --model_size small --tokenizer_type bpe
 ```
 
 **Command-line Arguments**:
-- `--architecture`: Model architecture (`GPT` or `LLAMA`, default: `GPT`)
+- `--architecture`: Model architecture (`GPT`, `LLAMA`, or `OLMO`, default: `GPT`)
 - `--model_size`: Model size (`small` or `full`, default: `small`)
 - `--use_einops`: Use einops versions (default: True, use `--no_einops` to disable)
 - `--tokenizer_type`: Tokenizer type (`character`, `bpe`, or `sentencepiece`, default: `character`)

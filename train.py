@@ -8,7 +8,7 @@ import argparse
 import torch
 import os
 from datetime import datetime
-from config import ModelConfig, Architecture
+from config import ModelConfig
 from training_args import TransformerTrainingArgs
 from trainer import TransformerTrainer
 from dataset import TransformerDataset

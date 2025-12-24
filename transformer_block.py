@@ -1,4 +1,4 @@
-import torch.nn as nn
+from torch import nn
 from jaxtyping import Float
 from torch import Tensor
 from attention import AttentionWithEinops, AttentionWithoutEinops
@@ -68,5 +68,4 @@ def create_transformer_block(cfg, use_einops=True, rope=None, alibi=None):
     """Factory function to create transformer block"""
     if use_einops:
         return TransformerBlockWithEinops(cfg, rope=rope, alibi=alibi)
-    else:
-        return TransformerBlockWithoutEinops(cfg, rope=rope, alibi=alibi)
+    return TransformerBlockWithoutEinops(cfg, rope=rope, alibi=alibi)
