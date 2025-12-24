@@ -206,7 +206,10 @@ class TransformerTrainer:
         filepath: str, model: nn.Module, optimizer: torch.optim.Optimizer = None
     ):
         """Load model checkpoint"""
-        checkpoint = torch.load(filepath, map_location="cpu")
+        # Allowlist TransformerTrainingArgs for safe loading (PyTorch 2.6+)
+        torch.serialization.add_safe_globals([TransformerTrainingArgs])
+        checkpoint = torch.load(
+            filepath, map_location="cpu", weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
         if optimizer is not None and "optimizer_state_dict" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])

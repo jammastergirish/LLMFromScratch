@@ -10,6 +10,7 @@ from config import ModelConfig
 from model import TransformerModelWithEinops, TransformerModelWithoutEinops
 from tokenizer import CharacterTokenizer, BPETokenizer
 from sampler import TransformerSampler
+from training_args import TransformerTrainingArgs
 
 
 def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
@@ -23,7 +24,10 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
         Tuple of (model, config, checkpoint_dict)
     """
     print(f"Loading checkpoint from {checkpoint_path}...")
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    # Allowlist TransformerTrainingArgs for safe loading (PyTorch 2.6+)
+    torch.serialization.add_safe_globals([TransformerTrainingArgs])
+    checkpoint = torch.load(
+        checkpoint_path, map_location=device, weights_only=False)
 
     # Get config from checkpoint
     cfg = checkpoint.get("cfg")
