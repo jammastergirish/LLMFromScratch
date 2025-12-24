@@ -20,3 +20,7 @@ device = torch.device(
     "mps" if torch.backends.mps.is_available(
     ) else "cuda" if torch.cuda.is_available() else "cpu"
 )
+
+# Load training data
+with open("training.txt", "r", encoding="utf-8") as f:
+    text = f.read()
