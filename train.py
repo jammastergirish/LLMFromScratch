@@ -13,9 +13,11 @@ from embed import EmbedWithoutTorch, EmbedWithTorch
 from positional_embedding import PosEmbedWithEinops, PosEmbedWithoutEinops
 from attention import AttentionWithEinops, AttentionWithoutEinops
 from mlp import MLPWithEinops, MLPWithoutEinops
+from transformer_block import TransformerBlockWithEinops, TransformerBlockWithoutEinops
 
 device = torch.device(
-    "mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu"
+    "mps" if torch.backends.mps.is_available(
+    ) else "cuda" if torch.cuda.is_available() else "cpu"
 )
 
 
