@@ -23,7 +23,7 @@ class TransformerModelWithEinops(nn.Module):
         # Positional embeddings (only for GPT)
         if cfg.architecture == Architecture.GPT:
             self.pos_embed = PosEmbedWithEinops(cfg)
-        else:  # LLaMA - no positional embedding layer
+        else:  # LLaMA/OLMo - no positional embedding layer
             self.pos_embed = None
 
         # RoPE (only for LLaMA)
@@ -32,9 +32,16 @@ class TransformerModelWithEinops(nn.Module):
         else:
             self.rope = None
 
+        # ALiBi (only for OLMo)
+        if cfg.architecture == Architecture.OLMO:
+            from alibi import ALiBi
+            self.alibi = ALiBi(cfg)
+        else:
+            self.alibi = None
+
         # Transformer blocks
         self.blocks = nn.ModuleList([
-            create_transformer_block(cfg, use_einops=True, rope=self.rope)
+            create_transformer_block(cfg, use_einops=True, rope=self.rope, alibi=self.alibi)
             for _ in range(cfg.n_layers)
         ])
 
@@ -91,7 +98,7 @@ class TransformerModelWithoutEinops(nn.Module):
         # Positional embeddings (only for GPT)
         if cfg.architecture == Architecture.GPT:
             self.pos_embed = PosEmbedWithoutEinops(cfg)
-        else:  # LLaMA - no positional embedding layer
+        else:  # LLaMA/OLMo - no positional embedding layer
             self.pos_embed = None
 
         # RoPE (only for LLaMA)
@@ -100,9 +107,16 @@ class TransformerModelWithoutEinops(nn.Module):
         else:
             self.rope = None
 
+        # ALiBi (only for OLMo)
+        if cfg.architecture == Architecture.OLMO:
+            from alibi import ALiBi
+            self.alibi = ALiBi(cfg)
+        else:
+            self.alibi = None
+
         # Transformer blocks
         self.blocks = nn.ModuleList([
-            create_transformer_block(cfg, use_einops=False, rope=self.rope)
+            create_transformer_block(cfg, use_einops=False, rope=self.rope, alibi=self.alibi)
             for _ in range(cfg.n_layers)
         ])
 

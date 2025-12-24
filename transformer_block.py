@@ -7,11 +7,11 @@ from layernorm import create_norm_layer
 
 
 class TransformerBlockWithEinops(nn.Module):
-    def __init__(self, cfg, rope=None):
+    def __init__(self, cfg, rope=None, alibi=None):
         super().__init__()
         self.cfg = cfg
         self.ln1 = create_norm_layer(cfg, use_einops=True)
-        self.attn = AttentionWithEinops(cfg, rope=rope)
+        self.attn = AttentionWithEinops(cfg, rope=rope, alibi=alibi)
         self.ln2 = create_norm_layer(cfg, use_einops=True)
         self.mlp = create_mlp_layer(cfg, use_einops=True)
 
@@ -35,20 +35,12 @@ class TransformerBlockWithEinops(nn.Module):
         return residual
 
 
-def create_transformer_block(cfg, use_einops=True, rope=None):
-    """Factory function to create transformer block"""
-    if use_einops:
-        return TransformerBlockWithEinops(cfg, rope=rope)
-    else:
-        return TransformerBlockWithoutEinops(cfg, rope=rope)
-
-
 class TransformerBlockWithoutEinops(nn.Module):
-    def __init__(self, cfg, rope=None):
+    def __init__(self, cfg, rope=None, alibi=None):
         super().__init__()
         self.cfg = cfg
         self.ln1 = create_norm_layer(cfg, use_einops=False)
-        self.attn = AttentionWithoutEinops(cfg, rope=rope)
+        self.attn = AttentionWithoutEinops(cfg, rope=rope, alibi=alibi)
         self.ln2 = create_norm_layer(cfg, use_einops=False)
         self.mlp = create_mlp_layer(cfg, use_einops=False)
 
@@ -72,17 +64,9 @@ class TransformerBlockWithoutEinops(nn.Module):
         return residual
 
 
-def create_transformer_block(cfg, use_einops=True, rope=None):
+def create_transformer_block(cfg, use_einops=True, rope=None, alibi=None):
     """Factory function to create transformer block"""
     if use_einops:
-        return TransformerBlockWithEinops(cfg, rope=rope)
+        return TransformerBlockWithEinops(cfg, rope=rope, alibi=alibi)
     else:
-        return TransformerBlockWithoutEinops(cfg, rope=rope)
-
-
-def create_transformer_block(cfg, use_einops=True, rope=None):
-    """Factory function to create transformer block"""
-    if use_einops:
-        return TransformerBlockWithEinops(cfg, rope=rope)
-    else:
-        return TransformerBlockWithoutEinops(cfg, rope=rope)
+        return TransformerBlockWithoutEinops(cfg, rope=rope, alibi=alibi)

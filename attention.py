@@ -6,10 +6,11 @@ from torch import Tensor
 
 
 class AttentionWithEinops(nn.Module):
-    def __init__(self, cfg, rope=None):
+    def __init__(self, cfg, rope=None, alibi=None):
         super().__init__()
         self.cfg = cfg
         self.rope = rope  # RoPE module (None for GPT, RoPE instance for LLaMA)
+        self.alibi = alibi  # ALiBi module (None for GPT/LLaMA, ALiBi instance for OLMo)
         self.W_Q = nn.Parameter(torch.empty(
             (cfg.n_heads, cfg.d_head, cfg.d_model)))
         self.W_K = nn.Parameter(torch.empty(
@@ -61,6 +62,12 @@ class AttentionWithEinops(nn.Module):
             "batch posn_q n_heads d_head, batch posn_k n_heads d_head -> batch n_heads posn_q posn_k"
         ) / (self.cfg.d_head ** 0.5)
 
+        # Apply ALiBi bias if provided (OLMo)
+        if self.alibi is not None:
+            alibi_bias = self.alibi.get_bias(seq_len, residual.device)  # [n_heads, seq_len, seq_len]
+            # Add bias to attention scores
+            attn_scores = attn_scores + alibi_bias.unsqueeze(0)  # [batch, n_heads, posn_q, posn_k]
+
         # Causal mask: mask out future positions
         # mask: [seq_len, seq_len] - lower triangular matrix
         mask = torch.tril(torch.ones(
@@ -94,10 +101,11 @@ class AttentionWithEinops(nn.Module):
 
 
 class AttentionWithoutEinops(nn.Module):
-    def __init__(self, cfg, rope=None):
+    def __init__(self, cfg, rope=None, alibi=None):
         super().__init__()
         self.cfg = cfg
         self.rope = rope  # RoPE module (None for GPT, RoPE instance for LLaMA)
+        self.alibi = alibi  # ALiBi module (None for GPT/LLaMA, ALiBi instance for OLMo)
         # W_Q, W_K, W_V: [n_heads, d_head, d_model] - per-head projection matrices
         self.W_Q = nn.Parameter(torch.empty(
             (cfg.n_heads, cfg.d_head, cfg.d_model)))
@@ -144,6 +152,12 @@ class AttentionWithoutEinops(nn.Module):
         # q @ k^T: [batch, n_heads, seq_len, d_head] @ [batch, n_heads, d_head, seq_len]
         attn_scores = torch.matmul(
             q, k.transpose(-2, -1)) / (self.cfg.d_head ** 0.5)
+
+        # Apply ALiBi bias if provided (OLMo)
+        if self.alibi is not None:
+            alibi_bias = self.alibi.get_bias(seq_len, residual.device)  # [n_heads, seq_len, seq_len]
+            # Add bias to attention scores
+            attn_scores = attn_scores + alibi_bias.unsqueeze(0)  # [batch, n_heads, seq_len, seq_len]
 
         # Causal mask: mask out future positions
         # mask: [seq_len, seq_len] - lower triangular matrix

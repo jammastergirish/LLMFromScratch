@@ -5,6 +5,7 @@ from enum import Enum
 class Architecture(str, Enum):
     GPT = "gpt"
     LLAMA = "llama"
+    OLMO = "olmo"
 
 
 @dataclass
@@ -112,4 +113,46 @@ class ModelConfig:
             d_mlp=3072,
             d_vocab=50257,
             rope_theta=10000.0,
+        )
+
+    @classmethod
+    def olmo_small(cls):
+        """Small OLMo config for faster training/testing"""
+        return cls(
+            architecture=Architecture.OLMO,
+            d_model=256,
+            n_heads=4,
+            n_layers=4,
+            n_ctx=256,
+            d_head=64,
+            d_mlp=1024,
+            d_vocab=50257,  # Will be updated by tokenizer
+        )
+
+    @classmethod
+    def olmo_medium(cls):
+        """Medium OLMo config (between small and full)"""
+        return cls(
+            architecture=Architecture.OLMO,
+            d_model=512,
+            n_heads=8,
+            n_layers=6,
+            n_ctx=512,
+            d_head=64,
+            d_mlp=2048,
+            d_vocab=50257,
+        )
+
+    @classmethod
+    def olmo_full(cls):
+        """Full OLMo config"""
+        return cls(
+            architecture=Architecture.OLMO,
+            d_model=768,
+            n_heads=12,
+            n_layers=12,
+            n_ctx=1024,
+            d_head=64,
+            d_mlp=3072,
+            d_vocab=50257,
         )

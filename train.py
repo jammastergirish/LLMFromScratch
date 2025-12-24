@@ -23,8 +23,8 @@ def main():
         "--architecture",
         type=str,
         default="GPT",
-        choices=["GPT", "LLAMA"],
-        help="Model architecture (GPT or LLaMA)"
+        choices=["GPT", "LLAMA", "OLMO"],
+        help="Model architecture (GPT, LLaMA, or OLMo)"
     )
     parser.add_argument(
         "--model_size",
@@ -81,6 +81,13 @@ def main():
         else:
             cfg = ModelConfig.llama_full()
             print("Using FULL LLaMA config")
+    elif args.architecture == "OLMO":
+        if args.model_size == "small":
+            cfg = ModelConfig.olmo_small()
+            print("Using SMALL OLMo config (faster for Mac)")
+        else:
+            cfg = ModelConfig.olmo_full()
+            print("Using FULL OLMo config")
     else:  # GPT
         if args.model_size == "small":
             cfg = ModelConfig.gpt_small()

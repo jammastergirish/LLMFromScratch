@@ -193,6 +193,12 @@ def create_mlp_layer(cfg, use_einops=True):
             return MLPSwiGLUWithEinops(cfg)
         else:
             return MLPSwiGLUWithoutEinops(cfg)
+    elif cfg.architecture == Architecture.OLMO:
+        # OLMo uses SwiGLU (like LLaMA)
+        if use_einops:
+            return MLPSwiGLUWithEinops(cfg)
+        else:
+            return MLPSwiGLUWithoutEinops(cfg)
     else:  # GPT
         if use_einops:
             return MLPWithEinops(cfg)
