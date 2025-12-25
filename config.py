@@ -1,11 +1,29 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Union
 
 
 class Architecture(str, Enum):
     GPT = "gpt"
     LLAMA = "llama"
     OLMO = "olmo"
+
+
+class PositionalEncoding(str, Enum):
+    LEARNED = "learned"  # Learned positional embeddings (GPT style)
+    ROPE = "rope"  # Rotary Position Embedding (LLaMA style)
+    ALIBI = "alibi"  # Attention with Linear Biases (OLMo style)
+    NONE = "none"  # No positional encoding
+
+
+class Normalization(str, Enum):
+    LAYERNORM = "layernorm"  # LayerNorm (GPT, OLMo style)
+    RMSNORM = "rmsnorm"  # RMSNorm (LLaMA style)
+
+
+class Activation(str, Enum):
+    GELU = "gelu"  # GELU activation (GPT style)
+    SWIGLU = "swiglu"  # SwiGLU activation (LLaMA, OLMo style)
 
 
 @dataclass
@@ -25,8 +43,37 @@ class ModelConfig:
     n_heads: int = 12
     n_layers: int = 12
 
+    # Configurable model components (if None, will be set based on architecture)
+    positional_encoding: Union[PositionalEncoding, None] = None
+    normalization: Union[Normalization, None] = None
+    activation: Union[Activation, None] = None
+
     # LLaMA-specific
     rope_theta: float = 10000.0  # Base frequency for RoPE
+
+    def __post_init__(self):
+        """Set defaults based on architecture if not explicitly provided"""
+        if self.positional_encoding is None:
+            if self.architecture == Architecture.GPT:
+                self.positional_encoding = PositionalEncoding.LEARNED
+            elif self.architecture == Architecture.LLAMA:
+                self.positional_encoding = PositionalEncoding.ROPE
+            elif self.architecture == Architecture.OLMO:
+                self.positional_encoding = PositionalEncoding.ALIBI
+            else:
+                self.positional_encoding = PositionalEncoding.NONE
+
+        if self.normalization is None:
+            if self.architecture == Architecture.LLAMA:
+                self.normalization = Normalization.RMSNORM
+            else:  # GPT, OLMO
+                self.normalization = Normalization.LAYERNORM
+
+        if self.activation is None:
+            if self.architecture == Architecture.GPT:
+                self.activation = Activation.GELU
+            else:  # LLaMA, OLMo
+                self.activation = Activation.SWIGLU
 
     @classmethod
     def gpt_small(cls):

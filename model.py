@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
-from config import Architecture
+from config import Architecture, PositionalEncoding
 from embed import EmbedWithoutTorch, EmbedWithTorch, UnembedWithoutTorch, UnembedWithTorch
 from positional_embedding import PosEmbedWithEinops, PosEmbedWithoutEinops
 from transformer_block import create_transformer_block
@@ -20,20 +20,20 @@ class TransformerModelWithEinops(nn.Module):
         # Token embeddings (same for both)
         self.embed = EmbedWithoutTorch(cfg)
 
-        # Positional embeddings (only for GPT)
-        if cfg.architecture == Architecture.GPT:
+        # Positional embeddings (based on positional_encoding config)
+        if cfg.positional_encoding == PositionalEncoding.LEARNED:
             self.pos_embed = PosEmbedWithEinops(cfg)
-        else:  # LLaMA/OLMo - no positional embedding layer
+        else:
             self.pos_embed = None
 
-        # RoPE (only for LLaMA)
-        if cfg.architecture == Architecture.LLAMA:
+        # RoPE (for ROPE positional encoding)
+        if cfg.positional_encoding == PositionalEncoding.ROPE:
             self.rope = RoPE(cfg)
         else:
             self.rope = None
 
-        # ALiBi (only for OLMo)
-        if cfg.architecture == Architecture.OLMO:
+        # ALiBi (for ALIBI positional encoding)
+        if cfg.positional_encoding == PositionalEncoding.ALIBI:
             from alibi import ALiBi
             self.alibi = ALiBi(cfg)
         else:
@@ -94,20 +94,20 @@ class TransformerModelWithoutEinops(nn.Module):
         # Token embeddings (same for both)
         self.embed = EmbedWithTorch(cfg)
 
-        # Positional embeddings (only for GPT)
-        if cfg.architecture == Architecture.GPT:
+        # Positional embeddings (based on positional_encoding config)
+        if cfg.positional_encoding == PositionalEncoding.LEARNED:
             self.pos_embed = PosEmbedWithoutEinops(cfg)
-        else:  # LLaMA/OLMo - no positional embedding layer
+        else:
             self.pos_embed = None
 
-        # RoPE (only for LLaMA)
-        if cfg.architecture == Architecture.LLAMA:
+        # RoPE (for ROPE positional encoding)
+        if cfg.positional_encoding == PositionalEncoding.ROPE:
             self.rope = RoPE(cfg)
         else:
             self.rope = None
 
-        # ALiBi (only for OLMo)
-        if cfg.architecture == Architecture.OLMO:
+        # ALiBi (for ALIBI positional encoding)
+        if cfg.positional_encoding == PositionalEncoding.ALIBI:
             from alibi import ALiBi
             self.alibi = ALiBi(cfg)
         else:

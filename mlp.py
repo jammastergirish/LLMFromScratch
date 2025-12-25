@@ -185,21 +185,15 @@ class MLPSwiGLUWithoutEinops(nn.Module):
 
 
 def create_mlp_layer(cfg, use_einops=True):
-    """Factory function to create appropriate MLP layer based on architecture"""
-    from config import Architecture
+    """Factory function to create appropriate MLP layer based on activation config"""
+    from config import Activation
 
-    if cfg.architecture == Architecture.LLAMA:
+    if cfg.activation == Activation.SWIGLU:
         if use_einops:
             return MLPSwiGLUWithEinops(cfg)
         else:
             return MLPSwiGLUWithoutEinops(cfg)
-    elif cfg.architecture == Architecture.OLMO:
-        # OLMo uses SwiGLU (like LLaMA)
-        if use_einops:
-            return MLPSwiGLUWithEinops(cfg)
-        else:
-            return MLPSwiGLUWithoutEinops(cfg)
-    else:  # GPT
+    else:  # GELU
         if use_einops:
             return MLPWithEinops(cfg)
         else:

@@ -196,15 +196,11 @@ st.header("1. Upload Training Data")
 uploaded_file = st.file_uploader(
     "Upload a text file for training",
     type=["txt"],
-    help="Upload a text file to train the model on"
+    help="Upload a text file to train the model on. If no file is uploaded, the default training.txt file will be used."
 )
 
-# Or use default file
-use_default = st.checkbox("Use default training.txt file", value=True)
-
-if not uploaded_file and not use_default:
-    st.warning("Please upload a text file or use the default file.")
-    st.stop()
+# Automatically use default file if no file is uploaded
+use_default = uploaded_file is None
 
 # Architecture selection
 st.header("2. Model Architecture")
@@ -238,40 +234,26 @@ def get_model_size_index(size):
 st.subheader("Quick Presets")
 
 
-def apply_preset(preset_name, version, model_size):
-    """Apply preset configuration based on preset name, version, and model size"""
+def apply_preset(preset_name, model_size):
+    """Apply preset configuration based on preset name and model size"""
     if preset_name == "GPT":
-        if version == "2":
-            st.session_state.model_config["positional_encoding"] = "learned"
-            st.session_state.model_config["normalization"] = "layernorm"
-            st.session_state.model_config["activation"] = "gelu"
-            st.session_state.model_config["tokenizer_type"] = "bpe"
-        # Future: GPT-3, GPT-4 would go here
+        st.session_state.model_config["positional_encoding"] = "learned"
+        st.session_state.model_config["normalization"] = "layernorm"
+        st.session_state.model_config["activation"] = "gelu"
+        st.session_state.model_config["tokenizer_type"] = "bpe"
 
     elif preset_name == "LLAMA":
         st.session_state.model_config["positional_encoding"] = "rope"
         st.session_state.model_config["normalization"] = "rmsnorm"
         st.session_state.model_config["activation"] = "swiglu"
         st.session_state.model_config["tokenizer_type"] = "sentencepiece"
-
-        if version == "1":
-            st.session_state.model_config["rope_theta"] = 10000.0
-            # LLaMA 1: Standard attention, vocab 32K, context 2K
-        elif version == "2":
-            st.session_state.model_config["rope_theta"] = 10000.0
-            # LLaMA 2: GQA in larger models, vocab 32K, context 4K
-        elif version == "3":
-            st.session_state.model_config["rope_theta"] = 500000.0
-            # LLaMA 3: GQA standard, vocab 128K, context 128K
+        st.session_state.model_config["rope_theta"] = 10000.0
 
     elif preset_name == "OLMO":
-        # Note: OLMo 3 uses RoPE, but our implementation uses ALiBi (OLMo 1 style)
-        if version in ("1", ""):
-            st.session_state.model_config["positional_encoding"] = "alibi"
-            st.session_state.model_config["normalization"] = "layernorm"
-            st.session_state.model_config["activation"] = "swiglu"
-            st.session_state.model_config["tokenizer_type"] = "sentencepiece"
-        # Future: OLMo 3 would use RoPE, SWA attention
+        st.session_state.model_config["positional_encoding"] = "alibi"
+        st.session_state.model_config["normalization"] = "layernorm"
+        st.session_state.model_config["activation"] = "swiglu"
+        st.session_state.model_config["tokenizer_type"] = "sentencepiece"
 
     # Set dimensions based on model size (same for all presets)
     if model_size == "small":
@@ -297,87 +279,43 @@ def apply_preset(preset_name, version, model_size):
         st.session_state.model_config["d_mlp"] = 3072
 
 
-# GPT presets
-st.markdown("**GPT Models:**")
-col_gpt1, col_gpt2, col_gpt3 = st.columns(3)
-with col_gpt1:
+# Preset buttons
+col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+
+with col1:
     if st.button("🚀 GPT-2", use_container_width=True):
         model_size = st.session_state.model_config.get("model_size", "small")
-        apply_preset("GPT", "2", model_size)
-        st.rerun()
-with col_gpt2:
-    st.caption("GPT-3/4 not implemented")
-with col_gpt3:
-    st.caption("(Different architecture)")
-
-# LLaMA presets
-st.markdown("**LLaMA Models:**")
-col_llama1, col_llama2, col_llama3 = st.columns(3)
-with col_llama1:
-    if st.button("🦙 LLaMA 1", use_container_width=True):
-        model_size = st.session_state.model_config.get("model_size", "small")
-        apply_preset("LLAMA", "1", model_size)
-        st.rerun()
-with col_llama2:
-    if st.button("🦙 LLaMA 2", use_container_width=True):
-        model_size = st.session_state.model_config.get("model_size", "small")
-        apply_preset("LLAMA", "2", model_size)
-        st.rerun()
-with col_llama3:
-    if st.button("🦙 LLaMA 3", use_container_width=True):
-        model_size = st.session_state.model_config.get("model_size", "small")
-        apply_preset("LLAMA", "3", model_size)
+        apply_preset("GPT", model_size)
         st.rerun()
 
-# OLMo presets
-st.markdown("**OLMo Models:**")
-col_olmo1, col_olmo2, col_olmo3 = st.columns(3)
-with col_olmo1:
-    if st.button("🔬 OLMo 1", use_container_width=True):
+with col2:
+    if st.button("🦙 LLaMA", use_container_width=True):
         model_size = st.session_state.model_config.get("model_size", "small")
-        apply_preset("OLMO", "1", model_size)
+        apply_preset("LLAMA", model_size)
         st.rerun()
-with col_olmo2:
-    st.caption("OLMo 3 not implemented")
-with col_olmo3:
-    st.caption("(Uses RoPE + SWA)")
 
-st.markdown("---")
-col4 = st.columns(1)[0]
+with col3:
+    if st.button("🔬 OLMo", use_container_width=True):
+        model_size = st.session_state.model_config.get("model_size", "small")
+        apply_preset("OLMO", model_size)
+        st.rerun()
+
 with col4:
-    # st.caption("Click a preset to configure components. Model size below affects dimensions.")/
     with st.expander("ℹ️ About Presets", expanded=False):
         st.markdown("""
-        **GPT Models:**
+        **Preset Configurations:**
         - **GPT-2**: Learned positional embeddings, LayerNorm, GELU activation, BPE tokenizer
-        - **GPT-3/4**: Not implemented (different architectures)
+        - **LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation, SentencePiece tokenizer
+        - **OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation, SentencePiece tokenizer
         
-        **LLaMA Models:**
-        - **LLaMA 1**: RoPE (θ=10K), RMSNorm, SwiGLU, SentencePiece, standard attention, vocab 32K, context 2K
-        - **LLaMA 2**: RoPE (θ=10K), RMSNorm, SwiGLU, SentencePiece, GQA in larger models, vocab 32K, context 4K
-        - **LLaMA 3**: RoPE (θ=500K), RMSNorm, SwiGLU, SentencePiece, GQA standard, vocab 128K, context 128K
+        **Model Size:**
+        - Controls model dimensions (d_model, n_heads, n_layers, etc.)
+        - All presets use the same dimensions for each size
+        - Clicking a preset uses the currently selected model size
         
-        **Key Differences:**
-        - **LLaMA 2 vs 3**: Main difference is RoPE theta (10K → 500K) for better long-context handling
-        - **LLaMA 3** also has 4x larger vocabulary (32K → 128K tokens) and much longer context window
-        - **GQA** (Grouped Query Attention) is not yet implemented in this codebase
-        
-        **OLMo Models:**
-        - **OLMo 1**: ALiBi positional encoding, LayerNorm, SwiGLU, SentencePiece
-        - **OLMo 3**: Not implemented (uses RoPE + Sliding Window Attention)
-        
-        **Model Dimensions:**
-        - All presets use the same dimensions for each size (small/medium/full)
-        - The difference is in the architectural components, not the dimensions
-        - **Small**: 256 dim, 4 layers, 4 heads (fast training)
-        - **Medium**: 512 dim, 6 layers, 8 heads (balanced)
-        - **Full**: 768 dim, 12 layers, 12 heads (GPT-2/LLaMA size)
-        
-        **Tokenizers:**
-        - Clicking a preset automatically sets the appropriate tokenizer
-        - You can still manually change the tokenizer after selecting a preset
-        
-        **Note**: GQA (Grouped Query Attention) is not yet implemented in the codebase.
+        **Customization:**
+        - All options below can be manually adjusted after selecting a preset
+        - Tokenizer is automatically set but can be changed
         """)
 
 # Model Components

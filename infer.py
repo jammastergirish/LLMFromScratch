@@ -13,6 +13,25 @@ from sampler import TransformerSampler
 from training_args import TransformerTrainingArgs
 
 
+def _print_state_dict_warnings(unexpected_keys, missing_keys):
+    """Print warnings about state dict mismatches."""
+    if unexpected_keys:
+        print(f"Warning: {len(unexpected_keys)} unexpected key(s) in "
+              f"checkpoint (ignored):")
+        for key in unexpected_keys[:5]:  # Show first 5
+            print(f"  - {key}")
+        if len(unexpected_keys) > 5:
+            print(f"  ... and {len(unexpected_keys) - 5} more")
+
+    if missing_keys:
+        print(f"Warning: {len(missing_keys)} missing key(s) in checkpoint "
+              f"(using random initialization):")
+        for key in missing_keys[:5]:  # Show first 5
+            print(f"  - {key}")
+        if len(missing_keys) > 5:
+            print(f"  ... and {len(missing_keys) - 5} more")
+
+
 def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
     """Load model and config from checkpoint.
 
@@ -49,8 +68,39 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
     else:
         model = TransformerModelWithoutEinops(cfg)
 
-    # Load weights
-    model.load_state_dict(checkpoint["model_state_dict"])
+    # Load weights with handling for architecture differences
+    # (e.g., checkpoint has pos_embed but current model uses ROPE/ALIBI)
+    state_dict = checkpoint["model_state_dict"]
+    model_state_dict = dict(model.state_dict())
+
+    # Filter state_dict to only include keys that exist in current model
+    filtered_state_dict = {}
+    missing_keys = []
+    unexpected_keys = []
+
+    for key, value in state_dict.items():
+        if key in model_state_dict:
+            # Check if shapes match
+            if model_state_dict[key].shape == value.shape:
+                filtered_state_dict[key] = value
+            else:
+                shape_msg = (f"{key} (shape mismatch: {value.shape} vs "
+                             f"{model_state_dict[key].shape})")
+                unexpected_keys.append(shape_msg)
+        else:
+            unexpected_keys.append(key)
+
+    # Find missing keys
+    for key in model_state_dict:
+        if key not in filtered_state_dict:
+            missing_keys.append(key)
+
+    # Load the filtered state dict
+    model.load_state_dict(filtered_state_dict, strict=False)
+
+    # Warn about mismatches
+    _print_state_dict_warnings(unexpected_keys, missing_keys)
+
     model = model.to(device)
     model.eval()
 
