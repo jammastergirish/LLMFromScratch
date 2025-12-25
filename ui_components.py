@@ -242,14 +242,129 @@ def _get_preset_info() -> str:
     - **GPT-2**: Learned positional embeddings, LayerNorm, GELU activation, BPE tokenizer
     - **LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation, SentencePiece tokenizer
     - **OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation, SentencePiece tokenizer
-    
+
     **Model Size:**
     - Controls model dimensions (d_model, n_heads, n_layers, etc.)
     - All presets use the same dimensions for each size
     - Clicking a preset uses the currently selected model size
-    
+
     **Customization:**
     - All options below can be manually adjusted after selecting a preset
     - Tokenizer is automatically set but can be changed
     """
 
+
+def generate_model_architecture_diagram(config: Dict) -> str:
+    """Generate ASCII art diagram of transformer architecture."""
+    n_layers = config.get("n_layers", 4)
+    d_model = config.get("d_model", 256)
+    n_heads = config.get("n_heads", 4)
+    d_mlp = config.get("d_mlp", 1024)
+    pos_enc = config.get("positional_encoding", "learned")
+    norm = config.get("normalization", "layernorm")
+    activation = config.get("activation", "gelu")
+
+    # Map technical names to display names
+    pos_enc_display = {
+        "learned": "Learned Pos Emb",
+        "rope": "RoPE",
+        "alibi": "ALiBi",
+        "none": "None"
+    }.get(pos_enc, pos_enc)
+
+    norm_display = {
+        "layernorm": "LayerNorm",
+        "rmsnorm": "RMSNorm"
+    }.get(norm, norm)
+
+    activation_display = {
+        "gelu": "GELU",
+        "swiglu": "SwiGLU"
+    }.get(activation, activation)
+
+    # Build the diagram
+    diagram = []
+
+    # Title
+    diagram.append(f"Transformer Architecture ({n_layers} layers, d_model={d_model})")
+    diagram.append("="*60)
+    diagram.append("")
+
+    # Input section
+    diagram.append("                         INPUT")
+    diagram.append("                           |")
+    diagram.append("                           v")
+    diagram.append(f"                   [Token Embeddings]")
+    diagram.append(f"                    (vocab → {d_model})")
+    diagram.append("                           |")
+    if pos_enc != "none":
+        diagram.append("                           +")
+        diagram.append(f"                   [{pos_enc_display}]")
+        diagram.append("                           |")
+    diagram.append("                           v")
+    diagram.append("          ┌────────────────────────────────┐")
+    diagram.append("          │                                │")
+    diagram.append("          │      RESIDUAL STREAM           │")
+    diagram.append(f"          │         (d={d_model})               │")
+    diagram.append("          │                                │")
+
+    # Layers
+    for layer_idx in range(n_layers):
+        diagram.append(f"          │  ─ ─ ─ Layer {layer_idx + 1} ─ ─ ─ ─ ─ ─  │")
+        diagram.append("          │                                │")
+
+        # Attention block
+        diagram.append(f"          ├──────> [{norm_display}] ─────┐    │")
+        diagram.append("          │                      │    │")
+        diagram.append(f"          │         [Multi-Head  │    │")
+        diagram.append(f"          │          Attention]  │    │")
+        diagram.append(f"          │         ({n_heads} heads)     │    │")
+        diagram.append("          │                      │    │")
+        diagram.append("          │ <───────────────────┘    │")
+        diagram.append("          │            +              │")
+        diagram.append("          │                                │")
+
+        # MLP block
+        diagram.append(f"          ├──────> [{norm_display}] ─────┐    │")
+        diagram.append("          │                      │    │")
+        diagram.append(f"          │           [MLP]      │    │")
+        diagram.append(f"          │      ({d_model}→{d_mlp}→{d_model})   │    │")
+        diagram.append(f"          │      [{activation_display}]        │    │")
+        diagram.append("          │                      │    │")
+        diagram.append("          │ <───────────────────┘    │")
+        diagram.append("          │            +              │")
+        diagram.append("          │                                │")
+
+    # Output section
+    diagram.append("          │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │")
+    diagram.append("          │                                │")
+    diagram.append(f"          ├──────> [{norm_display}] ─────┐    │")
+    diagram.append("          │                      │    │")
+    diagram.append(f"          │       [Unembedding]  │    │")
+    diagram.append(f"          │      ({d_model} → vocab)    │    │")
+    diagram.append("          │                      │    │")
+    diagram.append("          └──────────────────────┘    │")
+    diagram.append("                                      │")
+    diagram.append("                           v          │")
+    diagram.append("                        OUTPUT        │")
+    diagram.append("                     (logits)         │")
+    diagram.append("          └────────────────────────────────┘")
+
+    return "\n".join(diagram)
+
+
+def render_model_architecture_diagram(config: Dict) -> None:
+    """Render the model architecture diagram in Streamlit."""
+    with st.expander("🏗️ Model Architecture Diagram", expanded=False):
+        diagram = generate_model_architecture_diagram(config)
+        st.code(diagram, language="text")
+
+        # Add explanation
+        st.markdown("""
+        **Diagram Legend:**
+        - The **Residual Stream** (right side) carries information through the network
+        - Components branch off to process information and add it back
+        - Each layer has two main blocks: **Attention** and **MLP**
+        - Both blocks use normalization and have residual connections (+)
+        - The stream preserves dimension d_model throughout the network
+        """)

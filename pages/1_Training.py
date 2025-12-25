@@ -14,7 +14,7 @@ from pretraining.training.trainer import TransformerTrainer
 from pretraining.data.dataset import TransformerDataset
 from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
 from pretraining.training.training_ui import initialize_training_state, train_model_thread
-from ui_components import render_model_config_ui
+from ui_components import render_model_config_ui, render_model_architecture_diagram
 
 
 # Define helper functions first
@@ -357,6 +357,9 @@ uploaded_file = st.file_uploader(
 # Model configuration UI
 st.header("2. Model Architecture")
 model_config = render_model_config_ui()
+
+# Show architecture diagram
+render_model_architecture_diagram(model_config)
 
 use_einops = st.checkbox("Use einops (recommended)", value=True)
 
