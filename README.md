@@ -6,7 +6,7 @@ This repository contains a complete, educational implementation of transformer-b
 
 The goal is twofold: you can pre-train an LLM from scratch using a simple, intuitive interface, and you can explore the codebase to understand the modularized building blocks of transformer models, with multiple implementation variants for each component.
 
-I built this project after learning from videos, books, and lecture notes by Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, and many others. My goal was to build a transformer-based LLM from scratch and create an intuitive interface to experiment with different architectures and configurations. I'm incredibly grateful to all those from whom I learned and borrowed ideas—this project wouldn't exist without their excellent educational content. I hope it can be useful to others on their own learning journey.
+I built this project after learning from videos, books, and lecture notes by Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, Jay Alammar, and many others (links below). My goal was to build a transformer-based LLM from scratch and create an intuitive interface to experiment with different architectures and configurations. I'm incredibly grateful to all those from whom I learned and borrowed ideas—this project wouldn't exist without their excellent educational content. I hope it can be useful to others on their own learning journey.
 
 ## Table of Contents
 
@@ -1244,12 +1244,25 @@ At each position, we predict what comes next.
 
 ## Resources
 
-- [Attention Is All You Need](https://arxiv.org/abs/1706.03762) - Original transformer paper
-- [Language Models are Unsupervised Multitask Learners](https://d4mucfpksywv.cloudfront.net/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) - GPT-2 paper
-- [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/abs/2302.13971) - LLaMA paper
-- [OLMo: Accelerating the Science of Language Models](https://arxiv.org/abs/2402.00838) - OLMo paper
+### Papers
+
+- [Attention Is All You Need](https://arxiv.org/pdf/1706.03762) - Original transformer paper
+- [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) - GPT-2 paper
+- [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/pdf/2302.13971) - LLaMA paper
+- [OLMo: Accelerating the Science of Language Models](https://arxiv.org/pdf/2402.00838) - OLMo paper
+
+### Transformers
+
+- [ARENA's Transformers from Scratch](https://arena-chapter1-transformer-interp.streamlit.app/%5B1.1%5D_Transformer_from_Scratch)
+- [Neel Nanda on building an LLM from scratch](https://www.youtube.com/watch?v=bOYE6E8JrtU&list=PL7m7hLIqA0hoIUPhC26ASCVs_VrqcDpAz)
+- [Andrej Karpathy on building an LLM from scratch](https://www.youtube.com/watch?v=l8pRSuU81PU)
+- [3Blue1Brown on LLMs](https://www.youtube.com/watch?v=LPZh9BOjkQs&list=PLZHQObOWTQDNU6R1_67000Dx_ZCJB-3pi&index=6)
+- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
+- [John Hewitt at Stanford on pre-training](https://www.youtube.com/watch?v=DGfCRXuNA2w&list=PLoROMvodv4rOaMFbaqxPDoLWjDaRAdP9D&index=11)
+
+### Einops
 - [Einops Documentation](https://einops.rocks/) - Learn more about einops
-- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) - Visual explanation
+
 
 ---
 
