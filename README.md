@@ -15,7 +15,7 @@ _(This repository is a work in progress. Comments, corrections, and pull request
 
 ## What You'll Learn
 
-By exploring this codebase, you'll gain a deep understanding of:
+By exploring the interface and codebase, you'll gain a deep understanding of:
 
 - **Transformer Architecture**: How decoder-only language models work from the ground up
 - **Core Components**: Attention mechanisms, normalization layers, positional encodings, and feedforward networks
