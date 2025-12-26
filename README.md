@@ -1,7 +1,5 @@
 # Build an LLM
 
-(This is a work-in-progress. Comments, corrections, etc., are very welcome!)
-
 <img width="847" height="660" alt="Screenshot 2025-12-24 at 20 57 51" src="https://github.com/user-attachments/assets/2fbb32ac-45bd-4b27-9321-79dc65e14242" />
 
 This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model from scratch. 
@@ -12,14 +10,28 @@ I built this project as I wanted to properly understand LLMs. While videos, book
 
 (This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It also does not yet go past the pre-training stage.)
 
+## What You'll Learn
+
+By exploring this codebase, you'll gain a deep understanding of:
+
+- **Transformer Architecture**: How decoder-only language models work from the ground up
+- **Core Components**: Attention mechanisms, normalization layers, positional encodings, and feedforward networks
+- **Architecture Variants**: Differences between GPT, LLaMA, and OLMo implementations
+- **Training Process**: How to pre-train a language model using next-token prediction
+- **Text Generation**: Autoregressive generation and sampling strategies (temperature, top-k, top-p)
+- **Implementation Details**: Multiple implementation approaches (with/without einops, manual vs PyTorch built-ins) to understand what's happening under the hood
+
+The codebase includes both educational implementations (showing the math and operations explicitly) and optimized versions, so you can see how concepts translate to actual code.
+
 ## Contents
 
 1. [Usage Guide](#usage-guide)
 2. [Code Structure](#code-structure)
 3. [Pre-Training Pipeline](#pre-training-pipeline)
 4. [Inference and Sampling](#inference-and-sampling)
-5. [Architecture Comparison: GPT vs LLaMA vs OLMo](#architecture-comparison-gpt-vs-llama-vs-olmo)
+5. [Key Concepts](#key-concepts)
 6. [Core Components Deep Dive](#core-components-deep-dive)
+7. [Resources](#resources)
 
 ---
 
@@ -36,7 +48,7 @@ uv run --with streamlit streamlit run main.py
 
 The app will open in your browser with the following pages:
 - **Main**: Overview and this README
-- **Training Page**: Configure and train models with a visual interface
+- **Pre-Training Page**: Configure and pre-train models with a visual interface
 - **Inference Page**: Generate text from trained models
 
 ### Pre-Training
@@ -65,7 +77,7 @@ The app will open in your browser with the following pages:
 - **BPE-TikToken**: Learns subword units. Good balance of vocabulary size and efficiency.
 - **SentencePiece**: Similar to BPE but handles whitespace differently. Often used in multilingual models.
 
-**Command-line Training (Alternative):**
+**Command-line Training:**
 
 You can also train models using the command-line script:
 ```bash
@@ -97,7 +109,7 @@ uv run cli/train.py --no_einops
 3. Configure sampling parameters (temperature, top-k, top-p)
 4. Click "Generate" to create text
 
-**Command-line Inference (Alternative):**
+**Command-line Inference:**
 
 ```bash
 # Generate text from trained model
@@ -118,7 +130,7 @@ uv run cli/infer.py --checkpoint checkpoints/20240101120000/final_model.pt --pro
 
 ## Code Structure
 
-The codebase is designed for readability and learning, with clear implementations and detailed comments throughout. You will also even see alternative implementations, that are unused, in the code.
+The codebase is designed for readability and learning, with clear implementations and detailed comments throughout. You will also find alternative implementations (unused) in the code for educational purposes.
 
 ```
 .
@@ -131,7 +143,7 @@ The codebase is designed for readability and learning, with clear implementation
 │   ├── train.py           # Training script
 │   └── infer.py           # Inference script
 ├── pages/                 # Streamlit pages
-│   ├── 1_Training.py      # Training page UI
+│   ├── 1_Pre-Training.py  # Pre-training page UI
 │   └── 2_Inference.py     # Inference page UI
 ├── pretraining/           # Pre-training components
 │   ├── attention/         # Multi-head self-attention
@@ -331,70 +343,83 @@ for _ in range(max_new_tokens):
 
 ---
 
-## Architecture Comparison: GPT vs LLaMA vs OLMo
+## Key Concepts
 
-This codebase offers preset GPT, LLaMA, and OLMo architectures. Here are the key differences:
+Before diving into the implementation details, here are the key concepts that underpin this codebase:
 
-### Positional Encoding
+### 1. Autoregressive Language Modeling
 
-**GPT:**
-- **Learned positional embeddings**: Fixed embeddings for each position (0, 1, 2, ...)
-- Stored as `nn.Parameter` matrix `[n_ctx, d_model]`
-- Added directly to token embeddings: `final_emb = token_emb + pos_emb`
+**What it is**: Predicting the next token given previous tokens in a sequence.
 
-**LLaMA:**
-- **RoPE (Rotary Position Embedding)**: Computed on-the-fly, not learned
-- Applied to Q and K vectors in attention, not added to embeddings
-- Rotates query/key vectors by position-dependent angles
-- Encodes relative positions through rotations
+**Example**:
+```
+Input:  "The cat sat on the"
+Target: "cat sat on the mat"
+```
 
-**OLMo:**
-- **ALiBi (Attention with Linear Biases)**: Adds distance-based bias to attention scores
-- No positional embeddings or rotations
-- Bias is `-slope * distance` where slope decreases per head
-- Simpler than RoPE, extrapolates well to longer sequences
+At each position, the model predicts what comes next. This is how language models learn to generate coherent text.
 
-### Normalization
+**Why it works**: 
+- Language has structure and patterns
+- Given context, the next token is somewhat predictable
+- The model learns these patterns from data
 
-**GPT:**
-- **LayerNorm**: Normalizes by subtracting mean, then scaling
-- Formula: `(x - mean) / std * γ + β`
-- Has both scale (γ) and bias (β) parameters
+### 2. Causal Masking
 
-**LLaMA:**
-- **RMSNorm**: Normalizes by scaling only (no mean subtraction, no bias)
-- Formula: `x / sqrt(mean(x²) + ε) * γ`
-- Only has scale (γ) parameter, simpler and faster
+**What it is**: Preventing the model from seeing future tokens during training.
 
-**OLMo:**
-- **LayerNorm**: Same as GPT (normalizes by subtracting mean, then scaling)
-- Formula: `(x - mean) / std * γ + β`
-- Has both scale (γ) and bias (β) parameters
+**Why it's needed**:
+- During inference, we generate one token at a time
+- The model should only use past context
+- Training must match inference conditions
 
-### Activation Function
+**How it works**:
+- Attention scores for future positions are set to `-inf`
+- After softmax, these become 0 probability
+- The model can't attend to future tokens
 
-**GPT:**
-- **GELU** in MLP: `GELU(x) = x * Φ(x)` where Φ is CDF of standard normal
-- Uses 2 weight matrices: `W_in` and `W_out`
+### 3. Residual Connections
 
-**LLaMA:**
-- **SwiGLU** in MLP: `SwiGLU(x) = Swish(W_gate @ x) * (W_up @ x)`
-- Uses 3 weight matrices: `W_gate`, `W_up`, and `W_out`
-- Gated architecture allows more expressive transformations
+**What it is**: Adding input to output: `output = input + transformation(input)`
 
-**OLMo:**
-- **SwiGLU** in MLP: Same as LLaMA
-- Uses 3 weight matrices: `W_gate`, `W_up`, and `W_out`
-- Gated architecture allows more expressive transformations
+**Why it helps**:
+- Allows gradients to flow directly through
+- Enables training of very deep networks
+- The model can learn the identity function if the transformation isn't needed
 
-### Summary Table
+### 4. Layer Normalization
 
-| Component | GPT | LLaMA | OLMo |
-|-----------|-----|-------|------|
-| Positional Encoding | Learned embeddings | RoPE (rotary) | ALiBi (linear biases) |
-| Normalization | LayerNorm | RMSNorm | LayerNorm |
-| MLP Activation | GELU | SwiGLU | SwiGLU |
-| MLP Weights | 2 matrices | 3 matrices | 3 matrices |
+**What it is**: Normalizing activations across the feature dimension.
+
+**Why it helps**:
+- Stabilizes training
+- Allows higher learning rates
+- Reduces internal covariate shift
+
+**Variants**:
+- **LayerNorm** (GPT/OLMo): Normalizes by subtracting mean, then scaling
+- **RMSNorm** (LLaMA): Only scales (no mean subtraction, no bias)
+
+### 5. Positional Encoding
+
+**The Problem**: Transformers have no inherent notion of sequence order.
+
+**Solutions**:
+- **Learned Embeddings** (GPT): Fixed embeddings for each position
+- **RoPE** (LLaMA): Rotates query/key vectors by position-dependent angles
+- **ALiBi** (OLMo): Adds distance-based bias to attention scores
+
+### 6. Pre-training vs Fine-tuning
+
+**Pre-training** (what this codebase does):
+- Train on large, diverse text corpus
+- Learn general language patterns
+- Unsupervised (no labels needed)
+
+**Fine-tuning** (not included):
+- Take pre-trained model
+- Train further on specific task/domain
+- Supervised (needs labeled data)
 
 ---
 
@@ -1078,10 +1103,3 @@ def forward(self, tokens):
 
 ### Einops
 - [Einops Documentation](https://einops.rocks/) - Learn more about einops
-
-
----
-
-## License
-
-This is an educational repository. Feel free to use and modify for learning purposes.

@@ -1,4 +1,4 @@
-"""Training page for transformer models."""
+"""Pre-training page for transformer models."""
 
 import streamlit as st
 import os
@@ -341,7 +341,7 @@ def _display_training_status():
         _render_completed_training_ui()
 
 
-st.title("🚂 Training")
+st.title("🚂 Pre-Training")
 
 # Initialize training state
 initialize_training_state()

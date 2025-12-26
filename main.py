@@ -88,5 +88,5 @@ if "load_model_from_checkpoint" not in st.session_state:
 
 # Note: Training and Inference pages are in the pages/ directory
 # Streamlit automatically creates navigation for files in pages/
-# - pages/1_Training.py: Training page
+# - pages/1_Pre-Training.py: Pre-training page
 # - pages/2_Inference.py: Inference page
