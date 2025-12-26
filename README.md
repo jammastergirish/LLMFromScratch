@@ -2,14 +2,14 @@
 
 <img width="847" height="660" alt="Screenshot 2025-12-24 at 20 57 51" src="https://github.com/user-attachments/assets/2fbb32ac-45bd-4b27-9321-79dc65e14242" />
 
-This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model from scratch. 
+This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model.
 
 It offers two learning objectives:
 
 - **Pre-train an LLM from scratch** using a simple, intuitive interface.
 - **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. 
 
-I built this project as I wanted to properly understand LLMs. While videos, books, and lecture notes from Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, Jay Alammar, and many others (links below) were incredibly helpful, I knew that to properly understand, I had to write code myself. I'm incredibly grateful to all those from whom I learned and borrowed ideas. I hope others find it helpful too!
+I built this project as I wanted to properly understand LLMs. While videos, books, and lecture notes from Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, Jay Alammar, and many others ([links below](#resources)) were incredibly helpful, I knew that to properly understand, I had to write code myself. I'm incredibly grateful to all those from whom I learned and borrowed ideas. I hope others find it helpful too!
 
 (This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It also does not yet go past the pre-training stage.)
 
