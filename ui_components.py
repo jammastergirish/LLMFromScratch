@@ -255,115 +255,6 @@ def _get_preset_info() -> str:
     """
 
 
-def generate_model_architecture_diagram(config: Dict) -> str:
-    """Generate ASCII art diagram of transformer architecture."""
-    n_layers = config.get("n_layers", 4)
-    d_model = config.get("d_model", 256)
-    n_heads = config.get("n_heads", 4)
-    d_mlp = config.get("d_mlp", 1024)
-    pos_enc = config.get("positional_encoding", "learned")
-    norm = config.get("normalization", "layernorm")
-    activation = config.get("activation", "gelu")
-
-    # Map technical names to display names
-    pos_enc_display = {
-        "learned": "Learned Pos Emb",
-        "rope": "RoPE",
-        "alibi": "ALiBi",
-        "none": "None"
-    }.get(pos_enc, pos_enc)
-
-    norm_display = {
-        "layernorm": "LayerNorm",
-        "rmsnorm": "RMSNorm"
-    }.get(norm, norm)
-
-    activation_display = {
-        "gelu": "GELU",
-        "swiglu": "SwiGLU"
-    }.get(activation, activation)
-
-    # Build the diagram
-    diagram = []
-
-    # Title
-    diagram.append(
-        f"Transformer Architecture ({n_layers} layers, d_model={d_model})")
-    diagram.append("="*60)
-    diagram.append("")
-
-    # Input section
-    diagram.append("                         INPUT")
-    diagram.append("                           |")
-    diagram.append("                           v")
-    diagram.append("                   [Token Embeddings]")
-    diagram.append(f"                    (vocab → {d_model})")
-    diagram.append("                           |")
-    if pos_enc == "learned":
-        diagram.append("                           +")
-        diagram.append(f"                   [{pos_enc_display}]")
-        diagram.append("                           |")
-    diagram.append("                           v")
-    diagram.append("          ┌────────────────────────────────┐")
-    diagram.append("          │                                │")
-    diagram.append("          │      RESIDUAL STREAM           │")
-    diagram.append(f"          │         (d={d_model:4})               │")
-    diagram.append("          │                                │")
-
-    # Layers
-    for layer_idx in range(n_layers):
-        diagram.append(
-            f"          │  ─ ─ ─ Layer {layer_idx + 1} ─ ─ ─ ─ ─ ─     │")
-        diagram.append("          │                                │")
-
-        # Attention block
-        diagram.append(f"          ├──────> [{norm_display}] ─────┐      │")
-        diagram.append("          │                         │      │")
-        diagram.append("          │       [Multi-Head       │      │")
-        diagram.append("          │        Attention]       │      │")
-        diagram.append(f"          │       ({n_heads} heads)         │      │")
-
-        # Add positional encoding info inside attention block
-        if pos_enc == "rope":
-            diagram.append("          │    (RoPE on Q,K)       │      │")
-        elif pos_enc == "alibi":
-            diagram.append("          │   (ALiBi bias added)   │      │")
-        else:
-            diagram.append("          │                         │      │")
-
-        diagram.append("          │ <───────────────────────┘      │")
-        diagram.append("          │            +                   │")
-        diagram.append("          │                                │")
-
-        # MLP block
-        diagram.append(f"          ├──────> [{norm_display}] ─────┐      │")
-        diagram.append("          │                         │      │")
-        diagram.append("          │         [MLP]           │      │")
-        diagram.append(
-            f"          │    ({d_model}→{d_mlp}→{d_model})       │      │")
-        diagram.append(
-            f"          │        [{activation_display}]           │      │")
-        diagram.append("          │                         │      │")
-        diagram.append("          │ <───────────────────────┘      │")
-        diagram.append("          │            +                   │")
-        diagram.append("          │                                │")
-
-    # Output section
-    diagram.append("          │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─      │")
-    diagram.append("          │                                │")
-    diagram.append(f"          │        [{norm_display}]            │")
-    diagram.append("          │                                │")
-    diagram.append("          │        [Unembedding]           │")
-    diagram.append(f"          │      ({d_model} → vocab)            │")
-    diagram.append("          │                                │")
-    diagram.append("          │              v                 │")
-    diagram.append("          │           OUTPUT               │")
-    diagram.append("          │          (logits)              │")
-    diagram.append("          └────────────────────────────────┘")
-
-    return "\n".join(diagram)
-
-
 def generate_graphviz_architecture(config: Dict) -> str:
     """Generate Graphviz DOT code for transformer architecture."""
     n_layers = config.get("n_layers", 4)
@@ -477,30 +368,20 @@ def generate_graphviz_architecture(config: Dict) -> str:
 
 def render_model_architecture_diagram(config: Dict) -> None:
     """Render the model architecture diagram in Streamlit."""
-    with st.expander("🏗️ Model Architecture Diagram", expanded=False):
-        # Add tabs for different diagram types
-        tab1, tab2 = st.tabs(["ASCII Diagram", "Graphviz Diagram"])
+    with st.expander("🏗️ Architecture Diagram", expanded=False):
+        try:
+            import graphviz
+            dot_code = generate_graphviz_architecture(config)
+            st.graphviz_chart(dot_code)
+        except ImportError:
+            st.warning(
+                "Graphviz is not installed. Install it with: `pip install graphviz`")
+            st.code(generate_graphviz_architecture(config), language="dot")
 
-        with tab1:
-            diagram = generate_model_architecture_diagram(config)
-            st.code(diagram, language="text")
-
-            # Add explanation
-            st.markdown("""
-            **Diagram Legend:**
-            - The **Residual Stream** (right side) carries information through the network
-            - Components branch off to process information and add it back
-            - Each layer has two main blocks: **Attention** and **MLP**
-            - Both blocks use normalization and have residual connections (+)
-            - The stream preserves dimension d_model throughout the network
-            """)
-
-        with tab2:
-            try:
-                import graphviz
-                dot_code = generate_graphviz_architecture(config)
-                st.graphviz_chart(dot_code)
-            except ImportError:
-                st.warning(
-                    "Graphviz is not installed. Install it with: `pip install graphviz`")
-                st.code(generate_graphviz_architecture(config), language="dot")
+        # Add explanation
+        st.markdown("""
+        ** Legend:**
+        - The **vertical residual stream** (x₀ → x₁ → x₂ → ...) carries information through the network
+        - **Attention heads** and **MLP blocks** branch off and add their contributions back with "+"
+        - The **dashed box** shows one residual block that repeats multiple times
+        """)
