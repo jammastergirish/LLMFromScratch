@@ -29,6 +29,8 @@ def _create_model_config(model_config: dict) -> ModelConfig:
         architecture=Architecture.GPT,  # Base, doesn't matter
         d_model=model_config["d_model"],
         n_heads=model_config["n_heads"],
+        # Default to MHA if not specified
+        n_kv_heads=model_config.get("n_kv_heads", model_config["n_heads"]),
         n_layers=model_config["n_layers"],
         n_ctx=model_config["n_ctx"],
         d_head=model_config["d_head"],

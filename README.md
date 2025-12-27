@@ -894,19 +894,44 @@ The codebase supports three attention variants:
 ```python
 # residual: [batch, posn, d_model]
 # W_Q: [n_heads, d_head, d_model]
+# W_K, W_V: [n_kv_heads, d_head, d_model] (for GQA/MQA)
 # q: [batch, posn, n_heads, d_head]
 q = einops.einsum(
     residual, self.W_Q,
     "batch posn d_model, n_heads d_head d_model -> batch posn n_heads d_head"
 )
+# k: [batch, posn, n_kv_heads, d_head] (may be different from n_heads)
+k = einops.einsum(
+    residual, self.W_K,
+    "batch posn d_model, n_kv_heads d_head d_model -> batch posn n_kv_heads d_head"
+)
+# v: [batch, posn, n_kv_heads, d_head]
+v = einops.einsum(
+    residual, self.W_V,
+    "batch posn d_model, n_kv_heads d_head d_model -> batch posn n_kv_heads d_head"
+)
 ```
 
-**What's happening**: For each head, we project the residual into a `d_head`-dimensional space.
+**What's happening**: 
+- Q is projected with `n_heads` projections (one per Q head)
+- K/V are projected with `n_kv_heads` projections (may be fewer than `n_heads` for GQA/MQA)
+- For MHA: `n_kv_heads = n_heads` (standard behavior)
+- For GQA/MQA: `n_kv_heads < n_heads` (memory efficient)
+
+**Step 1b: Broadcast K/V for GQA/MQA** (if `n_kv_heads < n_heads`)
+```python
+# Broadcast K/V to match Q heads
+if self.n_kv_heads < self.n_heads:
+    repeat_factor = self.n_heads // self.n_kv_heads
+    k = k.repeat_interleave(repeat_factor, dim=2)  # [batch, posn_k, n_heads, d_head]
+    v = v.repeat_interleave(repeat_factor, dim=2)  # [batch, posn_k, n_heads, d_head]
+```
 
 **Step 2: Compute Attention Scores**
 ```python
+# After broadcasting, k and v have n_heads dimension
 # q: [batch, posn_q, n_heads, d_head]
-# k: [batch, posn_k, n_heads, d_head]
+# k: [batch, posn_k, n_heads, d_head] (broadcasted if GQA/MQA)
 # attn_scores: [batch, n_heads, posn_q, posn_k]
 attn_scores = einops.einsum(
     q, k,
@@ -967,10 +992,20 @@ output = einops.einsum(
 Same logic, but using PyTorch operations:
 ```python
 # Compute Q, K, V using einsum
-q = torch.einsum("bpd,nhd->bpnh", residual, self.W_Q)
+q = torch.einsum("bpd,nhd->bpnh", residual, self.W_Q)  # [batch, seq, n_heads, d_head]
+k = torch.einsum("bpd,nkd->bpnk", residual, self.W_K)  # [batch, seq, n_kv_heads, d_head]
+v = torch.einsum("bpd,nkd->bpnk", residual, self.W_V)  # [batch, seq, n_kv_heads, d_head]
+
+# Broadcast K/V for GQA/MQA (if needed)
+if self.n_kv_heads < self.n_heads:
+    repeat_factor = self.n_heads // self.n_kv_heads
+    k = k.repeat_interleave(repeat_factor, dim=2)  # [batch, seq, n_heads, d_head]
+    v = v.repeat_interleave(repeat_factor, dim=2)  # [batch, seq, n_heads, d_head]
 
 # Transpose for matmul: [batch, seq, n_heads, d_head] -> [batch, n_heads, seq, d_head]
 q = q.transpose(1, 2)
+k = k.transpose(1, 2)
+v = v.transpose(1, 2)
 
 # Attention scores
 attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (self.cfg.d_head ** 0.5)
@@ -1005,13 +1040,15 @@ Final: [batch, seq, d_model]  (after projection)
 # tokens: [batch, prompt_len]
 logits, kv_cache = model(tokens, cache=None, start_pos=0)
 # kv_cache: List of (K_cache, V_cache) tuples, one per layer
-# K_cache, V_cache: [batch, prompt_len, n_heads, d_head]
+# For MHA: K_cache, V_cache: [batch, prompt_len, n_heads, d_head]
+# For GQA/MQA: K_cache, V_cache: [batch, prompt_len, n_kv_heads, d_head] (smaller!)
 
 # Subsequent forward passes (generating new tokens)
 # new_token: [batch, 1] - only the new token
 logits, kv_cache = model(new_token, cache=kv_cache, start_pos=prompt_len)
 # K, V are concatenated: [cached_K, new_K] and [cached_V, new_V]
 # Only new_K and new_V are computed, cached ones are reused
+# For GQA/MQA: Cache stores original (non-broadcasted) K/V to save memory
 ```
 
 **Implementation Details**:

@@ -525,7 +525,11 @@ MODEL_SIZE_PRESETS = {
 
 
 def apply_model_size_preset(size: str, config: Dict) -> None:
-    """Apply model size preset to config."""
+    """Apply model size preset to config.
+    
+    Note: This function does NOT set n_kv_heads - that should be set by
+    architecture presets (which know whether to use MHA, GQA, or MQA).
+    """
     preset = MODEL_SIZE_PRESETS[size]
     for key, value in preset.items():
         config[key] = value
@@ -539,6 +543,8 @@ def apply_architecture_preset(preset_name: str, config: Dict) -> None:
         config["activation"] = "gelu"
         config["tokenizer_type"] = "bpe-tiktoken"
         config["use_moe"] = False
+        # GPT uses MHA (n_kv_heads = n_heads)
+        config["n_kv_heads"] = config.get("n_heads", 4)
     elif preset_name == "LLAMA":
         config["positional_encoding"] = "rope"
         config["normalization"] = "rmsnorm"
@@ -546,12 +552,16 @@ def apply_architecture_preset(preset_name: str, config: Dict) -> None:
         config["tokenizer_type"] = "sentencepiece"
         config["rope_theta"] = 10000.0
         config["use_moe"] = False
+        # Original LLaMA uses MHA (n_kv_heads = n_heads)
+        config["n_kv_heads"] = config.get("n_heads", 4)
     elif preset_name == "OLMO":
         config["positional_encoding"] = "alibi"
         config["normalization"] = "layernorm"
         config["activation"] = "swiglu"
         config["tokenizer_type"] = "sentencepiece"
         config["use_moe"] = False
+        # OLMo uses MHA (n_kv_heads = n_heads)
+        config["n_kv_heads"] = config.get("n_heads", 4)
 
 
 def apply_deepseek_v2_preset(config: Dict) -> None:
@@ -569,6 +579,8 @@ def apply_deepseek_v2_preset(config: Dict) -> None:
     config["router_type"] = "top_k_with_shared"
     config["load_balancing_loss_weight"] = 0.01
     config["expert_capacity_factor"] = 1.25
+    # DeepSeek V2 uses MHA (n_kv_heads = n_heads)
+    config["n_kv_heads"] = config.get("n_heads", 4)
 
 
 def apply_mixtral_preset(config: Dict) -> None:
@@ -672,30 +684,41 @@ def _render_preset_buttons(config: Dict) -> None:
         if st.button("🚀 GPT-2", width='stretch'):
             apply_architecture_preset("GPT", config)
             apply_model_size_preset(config.get("model_size", "small"), config)
+            # Ensure MHA after size preset (size preset might have changed n_heads)
+            config["n_kv_heads"] = config.get("n_heads", 4)
             st.rerun()
 
     with col2:
         if st.button("🦙 LLaMA", width='stretch'):
             apply_architecture_preset("LLAMA", config)
             apply_model_size_preset(config.get("model_size", "small"), config)
+            # Ensure MHA after size preset (size preset might have changed n_heads)
+            config["n_kv_heads"] = config.get("n_heads", 4)
             st.rerun()
 
     with col3:
         if st.button("🔬 OLMo", width='stretch'):
             apply_architecture_preset("OLMO", config)
             apply_model_size_preset(config.get("model_size", "small"), config)
+            # Ensure MHA after size preset (size preset might have changed n_heads)
+            config["n_kv_heads"] = config.get("n_heads", 4)
             st.rerun()
 
     with col4:
         if st.button("🔷 DeepSeek V2", width='stretch'):
             apply_deepseek_v2_preset(config)
             apply_model_size_preset(config.get("model_size", "small"), config)
+            # Ensure MHA after size preset (size preset might have changed n_heads)
+            config["n_kv_heads"] = config.get("n_heads", 4)
             st.rerun()
 
     with col5:
         if st.button("🎯 Mixtral", width='stretch'):
             apply_mixtral_preset(config)
             apply_model_size_preset(config.get("model_size", "small"), config)
+            # Re-apply Mixtral's GQA setting after size preset (size preset changes n_heads)
+            n_heads = config.get("n_heads", 4)
+            config["n_kv_heads"] = max(1, n_heads // 4)  # GQA with 4:1 ratio
             st.rerun()
 
     st.markdown("---")
@@ -1057,7 +1080,13 @@ def generate_graphviz_architecture(config: Dict) -> str:
     dot.append('        ')
 
     # Attention heads
-    heads_label = f"h₀  h₁  ...  h_{n_heads-1}"
+    n_kv_heads = config.get("n_kv_heads", n_heads)
+    if n_kv_heads == n_heads:
+        heads_label = f"h₀  h₁  ...  h_{n_heads-1}\\n(MHA)"
+    elif n_kv_heads == 1:
+        heads_label = f"h₀  h₁  ...  h_{n_heads-1}\\n(MQA: {n_kv_heads} KV)"
+    else:
+        heads_label = f"h₀  h₁  ...  h_{n_heads-1}\\n(GQA: {n_kv_heads} KV)"
     if pos_enc == "rope":
         heads_label += "\\n(RoPE)"
     elif pos_enc == "alibi":
@@ -1143,6 +1172,7 @@ def render_model_equations(config: Dict) -> None:
     with st.expander("📐 Equations", expanded=False):
         d_model = config.get("d_model", 256)
         n_heads = config.get("n_heads", 4)
+        n_kv_heads = config.get("n_kv_heads", n_heads)  # Default to MHA
         d_head = config.get("d_head", 64)
         d_mlp = config.get("d_mlp", 1024)
         pos_enc = config.get("positional_encoding", "learned")
@@ -1243,16 +1273,51 @@ def render_model_equations(config: Dict) -> None:
             st.markdown(
                 "where $\\epsilon = 10^{-5}$ (small constant), $\\gamma$ is a learnable scale parameter (no bias $\\beta$)")
 
-        st.markdown("**Multi-Head Attention:**")
-        st.markdown("Project to Q, K, V for all heads:")
-        st.latex(
-            r"Q = x_{\text{norm}} W_Q^T \quad Q \in \mathbb{R}^{B \times L \times n_{heads} \times d_{head}}")
-        st.latex(
-            r"K = x_{\text{norm}} W_K^T \quad K \in \mathbb{R}^{B \times L \times n_{heads} \times d_{head}}")
-        st.latex(
-            r"V = x_{\text{norm}} W_V^T \quad V \in \mathbb{R}^{B \times L \times n_{heads} \times d_{head}}")
-        st.markdown(
-            f"where $W_Q, W_K, W_V \\in \\mathbb{{R}}^{{{n_heads} \\times {d_head} \\times {d_model}}}$")
+        # Determine attention type
+        if n_kv_heads == n_heads:
+            attention_type = "Multi-Head Attention (MHA)"
+        elif n_kv_heads == 1:
+            attention_type = "Multi-Query Attention (MQA)"
+        else:
+            attention_type = "Grouped Query Attention (GQA)"
+
+        st.markdown(f"**{attention_type}:**")
+
+        if n_kv_heads == n_heads:
+            # Standard MHA
+            st.markdown("Project to Q, K, V for all heads:")
+            st.latex(
+                r"Q = x_{\text{norm}} W_Q^T \quad Q \in \mathbb{R}^{B \times L \times n_{heads} \times d_{head}}")
+            st.latex(
+                r"K = x_{\text{norm}} W_K^T \quad K \in \mathbb{R}^{B \times L \times n_{heads} \times d_{head}}")
+            st.latex(
+                r"V = x_{\text{norm}} W_V^T \quad V \in \mathbb{R}^{B \times L \times n_{heads} \times d_{head}}")
+            st.markdown(
+                f"where $W_Q, W_K, W_V \\in \\mathbb{{R}}^{{{n_heads} \\times {d_head} \\times {d_model}}}$")
+        else:
+            # GQA or MQA
+            st.markdown("Project to Q, K, V:")
+            st.latex(
+                r"Q = x_{\text{norm}} W_Q^T \quad Q \in \mathbb{R}^{B \times L \times n_{heads} \times d_{head}}")
+            st.latex(
+                r"K = x_{\text{norm}} W_K^T \quad K \in \mathbb{R}^{B \times L \times n_{kv\_heads} \times d_{head}}")
+            st.latex(
+                r"V = x_{\text{norm}} W_V^T \quad V \in \mathbb{R}^{B \times L \times n_{kv\_heads} \times d_{head}}")
+            st.markdown(
+                f"where $W_Q \\in \\mathbb{{R}}^{{{n_heads} \\times {d_head} \\times {d_model}}}$, "
+                f"$W_K, W_V \\in \\mathbb{{R}}^{{{n_kv_heads} \\times {d_head} \\times {d_model}}}$")
+
+            # Show broadcasting step
+            repeat_factor = n_heads // n_kv_heads
+            st.markdown("**Broadcast K/V to match Q heads:**")
+            st.latex(
+                r"K_{{\text{{broadcast}}}} = \text{{repeat}}(K, \text{{dim}}=2, \text{{times}}={}) \quad K_{{\text{{broadcast}}}} \in \mathbb{{R}}^{{B \times L \times n_{{heads}} \times d_{{head}}}}".format(repeat_factor))
+            st.latex(
+                r"V_{{\text{{broadcast}}}} = \text{{repeat}}(V, \text{{dim}}=2, \text{{times}}={}) \quad V_{{\text{{broadcast}}}} \in \mathbb{{R}}^{{B \times L \times n_{{heads}} \times d_{{head}}}}".format(repeat_factor))
+            st.markdown(
+                f"Each KV head is repeated {repeat_factor} times to match the {n_heads} Q heads. "
+                f"This allows {n_heads} Q heads to share {n_kv_heads} KV heads, reducing KV cache size by "
+                f"{(1 - n_kv_heads/n_heads)*100:.1f}%.")
 
         if pos_enc == "rope":
             st.markdown("**Apply RoPE (Rotary Position Embedding):**")
@@ -1260,8 +1325,14 @@ def render_model_equations(config: Dict) -> None:
                 "RoPE rotates Q and K vectors BEFORE computing attention scores:")
             st.latex(
                 r"R_i = \begin{bmatrix} \cos(\theta_d \cdot i) & -\sin(\theta_d \cdot i) \\ \sin(\theta_d \cdot i) & \cos(\theta_d \cdot i) \end{bmatrix}")
-            st.latex(
-                r"Q_{\text{rotated}} = R_i \cdot Q \quad K_{\text{rotated}} = R_j \cdot K")
+            if n_kv_heads == n_heads:
+                st.latex(
+                    r"Q_{\text{rotated}} = R_i \cdot Q \quad K_{\text{rotated}} = R_j \cdot K")
+            else:
+                st.latex(
+                    r"Q_{\text{rotated}} = R_i \cdot Q \quad K_{\text{rotated}} = R_j \cdot K_{\text{original}}")
+                st.markdown(
+                    f"Note: RoPE is applied to K with {n_kv_heads} heads, then K is broadcasted to match Q.")
             st.markdown("Compute attention scores with rotated vectors:")
             st.latex(
                 r"\text{attn\_scores} = \frac{Q_{\text{rotated}} K_{\text{rotated}}^T}{\sqrt{d_{head}}}")
@@ -1297,10 +1368,24 @@ def render_model_equations(config: Dict) -> None:
         st.latex(
             r"\text{attn\_pattern} = \text{softmax}(\text{attn\_scores}, \text{dim}=-1)")
         st.markdown("**Apply to Values and Output Projection:**")
-        st.latex(r"\text{attn\_output} = \text{attn\_pattern} \cdot V")
+        if n_kv_heads < n_heads:
+            st.latex(
+                r"\text{attn\_output} = \text{attn\_pattern} \cdot V_{\text{broadcast}}")
+        else:
+            st.latex(r"\text{attn\_output} = \text{attn\_pattern} \cdot V")
         st.latex(r"\text{attn\_output} = \text{attn\_output} \cdot W_O^T")
         st.markdown("**Residual Connection:**")
         st.latex(r"x = x + \text{attn\_output}")
+
+        # Add note about KV cache for GQA/MQA
+        if n_kv_heads < n_heads:
+            st.markdown("---")
+            st.markdown("**KV Cache Note:**")
+            st.markdown(
+                f"For efficient inference, the KV cache stores the original (non-broadcasted) K/V: "
+                f"$[B, L, n_{{kv\\_heads}}, d_{{head}}]$ = $[B, L, {n_kv_heads}, {d_head}]$ "
+                f"instead of $[B, L, n_{{heads}}, d_{{head}}]$ = $[B, L, {n_heads}, {d_head}]$. "
+                f"This reduces cache size by {(1 - n_kv_heads/n_heads)*100:.1f}% compared to MHA.")
 
         st.markdown("#### 3.2 MLP Sub-block")
 

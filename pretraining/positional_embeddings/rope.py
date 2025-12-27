@@ -22,7 +22,7 @@ class RoPE(nn.Module):
     def forward(
         self,
         q: Float[Tensor, "batch seq n_heads d_head"],
-        k: Float[Tensor, "batch seq n_heads d_head"],
+        k: Float[Tensor, "batch seq n_kv_heads d_head"],
         positions: torch.Tensor  # [seq] - position indices
     ):
         """
@@ -30,19 +30,21 @@ class RoPE(nn.Module):
 
         Args:
             q: Query tensor [batch, seq, n_heads, d_head]
-            k: Key tensor [batch, seq, n_heads, d_head]
+            k: Key tensor [batch, seq, n_kv_heads, d_head] (supports GQA/MQA)
             positions: Position indices [seq]
 
         Returns:
             Rotated q and k with same shapes
         """
-        # q, k: [batch, seq, n_heads, d_head]
-        batch, seq_len, n_heads, d_head = q.shape
+        # q: [batch, seq, n_heads, d_head]
+        # k: [batch, seq, n_kv_heads, d_head] (may be different from n_heads for GQA/MQA)
+        batch, seq_len, n_heads_q, d_head = q.shape
+        _, _, n_heads_k, _ = k.shape
 
         # Reshape to pairs: [batch, seq, n_heads, d_head/2, 2]
         # Each pair (x_i, x_i+1) will be rotated
-        q_pairs = q.reshape(batch, seq_len, n_heads, d_head // 2, 2)
-        k_pairs = k.reshape(batch, seq_len, n_heads, d_head // 2, 2)
+        q_pairs = q.reshape(batch, seq_len, n_heads_q, d_head // 2, 2)
+        k_pairs = k.reshape(batch, seq_len, n_heads_k, d_head // 2, 2)
 
         # Compute rotation angles for each position
         # angles: [seq, d_head/2]
@@ -74,8 +76,8 @@ class RoPE(nn.Module):
         ], dim=-1)  # [batch, seq, n_heads, d_head/2, 2]
 
         # Reshape back: [batch, seq, n_heads, d_head]
-        q_rotated = q_rotated.reshape(batch, seq_len, n_heads, d_head)
-        k_rotated = k_rotated.reshape(batch, seq_len, n_heads, d_head)
+        q_rotated = q_rotated.reshape(batch, seq_len, n_heads_q, d_head)
+        k_rotated = k_rotated.reshape(batch, seq_len, n_heads_k, d_head)
 
         return q_rotated, k_rotated
 
