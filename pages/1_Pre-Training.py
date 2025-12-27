@@ -14,7 +14,7 @@ from pretraining.training.trainer import TransformerTrainer
 from pretraining.data.dataset import TransformerDataset
 from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
 from pretraining.training.training_ui import initialize_training_state, train_model_thread
-from ui_components import render_model_config_ui, render_model_architecture_diagram, render_model_equations
+from ui_components import render_model_config_ui, render_model_architecture_diagram, render_model_equations, render_model_code_snippets
 
 
 # Define helper functions first
@@ -358,17 +358,13 @@ uploaded_file = st.file_uploader(
 st.header("2. Model Architecture")
 model_config = render_model_config_ui()
 
-# Show architecture diagram
-render_model_architecture_diagram(model_config)
-
-# Show mathematical equations
-render_model_equations(model_config)
-
 use_einops = st.checkbox("Use einops (recommended)", value=True)
+model_config["use_einops"] = use_einops  # Store in config for code snippets
 
 # Tokenizer selection
 st.header("3. Tokenizer")
-tokenizer_options = ["character", "bpe-simple", "bpe-tiktoken", "sentencepiece"]
+tokenizer_options = ["character", "bpe-simple",
+                     "bpe-tiktoken", "sentencepiece"]
 current_tokenizer = model_config.get("tokenizer_type", "bpe-tiktoken")
 tokenizer_index = tokenizer_options.index(
     current_tokenizer) if current_tokenizer in tokenizer_options else 2
@@ -400,6 +396,15 @@ with st.expander("Advanced Settings", expanded=False):
             "Evaluation Interval", min_value=100, max_value=5000, value=500)
         save_interval = st.number_input(
             "Save Interval", min_value=100, max_value=5000, value=1000)
+
+# Show architecture diagram
+render_model_architecture_diagram(model_config)
+
+# Show mathematical equations
+render_model_equations(model_config)
+
+# Show code implementation
+render_model_code_snippets(model_config)
 
 # Start training button
 st.header("5. Start Training")

@@ -20,7 +20,7 @@ from finetuning.training.sft_trainer import SFTTrainer
 from finetuning.training.finetuning_args import FinetuningArgs
 from finetuning.training.sft_training_ui import train_sft_model_thread
 from pretraining.training.training_ui import initialize_training_state
-from ui_components import render_checkpoint_selector, render_finetuning_equations
+from ui_components import render_checkpoint_selector, render_finetuning_equations, render_finetuning_code_snippets
 from config import PositionalEncoding
 
 
@@ -601,6 +601,9 @@ render_finetuning_equations(
     lora_alpha=lora_alpha,
 )
 
+# Show code implementation
+render_finetuning_code_snippets(use_lora=use_lora)
+
 # CSV upload
 st.header("3. Upload Training Data")
 uploaded_csv = st.file_uploader(
@@ -616,7 +619,7 @@ if uploaded_csv is None:
             "📄 Using default finetuning.csv file. Upload a different file to override.")
         # Preview default CSV
         df = pd.read_csv("finetuning.csv")
-        st.dataframe(df.head(), use_container_width=True)
+        st.dataframe(df.head(), width='stretch')
         st.caption(f"Total rows: {len(df)}")
     else:
         st.warning(

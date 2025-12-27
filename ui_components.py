@@ -1,5 +1,6 @@
 """Reusable Streamlit UI components."""
 
+import inspect
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -633,6 +634,495 @@ def render_model_equations(config: Dict) -> None:
         - **Activation**: {activation.upper()}
         - **Dimensions**: d_model={d_model}, n_heads={n_heads}, d_head={d_head}, d_mlp={d_mlp}
         """)
+
+
+def _get_file_relative_path(absolute_path: str) -> str:
+    """Convert absolute path to relative path from project root."""
+    try:
+        # Try to find project root by looking for common markers
+        current = Path(absolute_path).resolve()
+        project_root = None
+
+        # Walk up the directory tree to find project root
+        for _ in range(10):  # Limit search depth
+            if (current / "main.py").exists() or (current / "pyproject.toml").exists():
+                project_root = current
+                break
+            if current == current.parent:
+                break
+            current = current.parent
+
+        if project_root:
+            try:
+                rel_path = Path(absolute_path).relative_to(project_root)
+                return str(rel_path).replace('\\', '/')
+            except ValueError:
+                pass
+
+        # Fallback: find 'pretraining' or 'finetuning' in path
+        parts = Path(absolute_path).parts
+        for i, part in enumerate(parts):
+            if part in ['pretraining', 'finetuning', 'inference']:
+                return '/'.join(parts[i:])
+
+        # Final fallback: return just the filename
+        return Path(absolute_path).name
+    except Exception:
+        return Path(absolute_path).name
+
+
+def _get_class_source_with_lines(module_path: str, class_name: str, method_name: str = "forward") -> Tuple[str, int, int, str]:
+    """
+    Extract source code for a class method with line numbers.
+
+    Args:
+        module_path: Path to module (e.g., "pretraining.model.model")
+        class_name: Name of class (e.g., "TransformerModelWithEinops")
+        method_name: Name of method (default: "forward")
+
+    Returns:
+        Tuple of (source_code, start_line, end_line, file_path)
+    """
+    try:
+        # Import module dynamically
+        module = __import__(module_path, fromlist=[class_name])
+        cls = getattr(module, class_name)
+        method = getattr(cls, method_name)
+
+        # Get source lines
+        source_lines, start_line = inspect.getsourcelines(method)
+        source_code = ''.join(source_lines)
+        end_line = start_line + len(source_lines) - 1
+
+        # Get file path
+        file_path = inspect.getfile(cls)
+
+        return source_code, start_line, end_line, file_path
+    except Exception as e:
+        raise Exception(
+            f"Could not extract source for {module_path}.{class_name}.{method_name}: {e}")
+
+
+def _get_object_source_with_lines(module_path: str, object_name: str) -> Tuple[str, int, int, str]:
+    """
+    Extract source code for a class or function with line numbers.
+    Works for both classes and functions since inspect.getsourcelines() handles both.
+
+    Args:
+        module_path: Path to module (e.g., "pretraining.model.model")
+        object_name: Name of class or function (e.g., "TransformerModelWithEinops" or "convert_model_to_lora")
+
+    Returns:
+        Tuple of (source_code, start_line, end_line, file_path)
+    """
+    try:
+        # Import module dynamically
+        module = __import__(module_path, fromlist=[object_name])
+        obj = getattr(module, object_name)
+
+        # Get source lines (works for both classes and functions)
+        source_lines, start_line = inspect.getsourcelines(obj)
+        source_code = ''.join(source_lines)
+        end_line = start_line + len(source_lines) - 1
+
+        # Get file path
+        file_path = inspect.getfile(obj)
+
+        return source_code, start_line, end_line, file_path
+    except Exception as e:
+        raise Exception(
+            f"Could not extract source for {module_path}.{object_name}: {e}")
+
+
+def _generate_github_link(
+    file_path: str,
+    start_line: int,
+    end_line: int,
+    github_repo_url: str = "https://github.com/jammastergirish/BuildAnLLM",
+    branch: str = "main"
+) -> str:
+    """
+    Generate GitHub link to code snippet.
+
+    Format: https://github.com/user/repo/blob/branch/path/to/file.py#L10-L20
+    """
+    # Convert absolute path to relative
+    rel_path = _get_file_relative_path(file_path)
+
+    # Construct URL
+    repo_url = github_repo_url.rstrip('/')
+    # Replace backslashes with forward slashes for URL
+    rel_path_url = rel_path.replace('\\', '/')
+    return f"{repo_url}/blob/{branch}/{rel_path_url}#L{start_line}-L{end_line}"
+
+
+def _determine_components_to_show(config: Dict) -> Dict[str, Dict]:
+    """
+    Determine which components and classes to show based on config.
+
+    Returns:
+        Dict mapping component names to their configuration
+    """
+    use_einops = config.get("use_einops", True)
+    pos_enc = config.get("positional_encoding", "learned")
+    norm = config.get("normalization", "layernorm")
+    activation = config.get("activation", "gelu")
+
+    components = {}
+
+    # Model
+    components["model"] = {
+        "class": "TransformerModelWithEinops" if use_einops else "TransformerModelWithoutEinops",
+        "use_einops": use_einops
+    }
+
+    # Transformer Block
+    components["transformer_block"] = {
+        "class": "TransformerBlockWithEinops" if use_einops else "TransformerBlockWithoutEinops",
+        "use_einops": use_einops
+    }
+
+    # Attention
+    components["attention"] = {
+        "class": "AttentionWithEinops" if use_einops else "AttentionWithoutEinops",
+        "pos_enc": pos_enc
+    }
+
+    # MLP
+    if activation == "swiglu":
+        components["mlp"] = {
+            "class": "MLPSwiGLUWithEinops" if use_einops else "MLPSwiGLUWithoutEinops",
+            "activation": activation
+        }
+    else:  # gelu
+        components["mlp"] = {
+            "class": "MLPWithEinops" if use_einops else "MLPWithoutEinops",
+            "activation": activation
+        }
+
+    # Normalization
+    if norm == "rmsnorm":
+        components["normalization"] = {
+            "class": "RMSNormWithEinops" if use_einops else "RMSNormWithoutEinops",
+            "file": "rmsnorm",
+            "norm": norm
+        }
+    else:  # layernorm
+        components["normalization"] = {
+            "class": "LayerNormWithEinops" if use_einops else "LayerNormWithoutEinops",
+            "file": "layernorm",
+            "norm": norm
+        }
+
+    # Positional Encoding
+    if pos_enc == "learned":
+        components["positional_encoding"] = {
+            "class": "PosEmbedWithEinops" if use_einops else "PosEmbedWithoutEinops",
+            "type": "learned",
+            "module": "pretraining.positional_embeddings.positional_embedding"
+        }
+    elif pos_enc == "rope":
+        components["positional_encoding"] = {
+            "class": "RoPE",
+            "type": "rope",
+            "module": "pretraining.positional_embeddings.rope",
+            "method": "forward"
+        }
+    elif pos_enc == "alibi":
+        components["positional_encoding"] = {
+            "class": "ALiBi",
+            "type": "alibi",
+            "module": "pretraining.positional_embeddings.alibi",
+            "method": "get_bias"  # Show get_bias method for ALiBi
+        }
+    # else: "none" - don't add positional_encoding
+
+    # Embeddings
+    components["embeddings"] = {
+        "class": "EmbedWithoutTorch" if use_einops else "EmbedWithTorch",
+        "use_einops": use_einops
+    }
+
+    return components
+
+
+def _render_code_section(
+    title: str,
+    module_path: str,
+    class_name: str,
+    method_name: str,
+    github_repo_url: str = "https://github.com/jammastergirish/BuildAnLLM"
+) -> bool:
+    """
+    Render a single code section with file info and GitHub link.
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        source_code, start_line, end_line, file_path = _get_class_source_with_lines(
+            module_path, class_name, method_name
+        )
+        rel_path = _get_file_relative_path(file_path)
+
+        # Display title and file info
+        st.markdown(f"### {title}")
+        st.caption(f"📄 `{rel_path}` (lines {start_line}-{end_line})")
+
+        # GitHub link
+        github_link = _generate_github_link(
+            file_path, start_line, end_line, github_repo_url
+        )
+        st.markdown(f"🔗 [View on GitHub]({github_link})")
+
+        # Code block
+        st.code(source_code, language="python")
+
+        return True
+    except Exception as e:
+        st.warning(f"Could not load code for {title}: {e}")
+        return False
+
+
+def _render_entire_class(
+    title: str,
+    module_path: str,
+    class_name: str,
+    github_repo_url: str = "https://github.com/jammastergirish/BuildAnLLM"
+) -> bool:
+    """
+    Render an entire class definition with all its methods.
+
+    Args:
+        title: Section title
+        module_path: Path to module
+        class_name: Name of class
+        github_repo_url: GitHub repo URL
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        source_code, start_line, end_line, file_path = _get_object_source_with_lines(
+            module_path, class_name
+        )
+        rel_path = _get_file_relative_path(file_path)
+
+        # Display title and file info
+        st.markdown(f"### {title}")
+        st.caption(f"📄 `{rel_path}` (lines {start_line}-{end_line})")
+
+        # GitHub link
+        github_link = _generate_github_link(
+            file_path, start_line, end_line, github_repo_url
+        )
+        st.markdown(f"🔗 [View on GitHub]({github_link})")
+
+        # Code block
+        st.code(source_code, language="python")
+
+        return True
+    except Exception as e:
+        st.warning(f"Could not load code for {title}: {e}")
+        return False
+
+
+def render_model_code_snippets(config: Dict) -> None:
+    """
+    Render relevant code snippets based on model configuration.
+
+    Args:
+        config: Model configuration dict
+    """
+    github_repo_url = "https://github.com/jammastergirish/BuildAnLLM"
+
+    with st.expander("💻 Code Implementation", expanded=False):
+        components = _determine_components_to_show(config)
+
+        # 1. Model (entire class)
+        _render_entire_class(
+            "1. Model",
+            "pretraining.model.model",
+            components["model"]["class"],
+            github_repo_url
+        )
+
+        st.markdown("---")
+
+        # 2. Transformer Block (entire class)
+        _render_entire_class(
+            "2. Transformer Block",
+            "pretraining.transformer_blocks.transformer_block",
+            components["transformer_block"]["class"],
+            github_repo_url
+        )
+
+        st.markdown("---")
+
+        # 3. Attention Mechanism (entire class)
+        _render_entire_class(
+            "3. Attention Mechanism",
+            "pretraining.attention.attention",
+            components["attention"]["class"],
+            github_repo_url
+        )
+
+        # 4. Positional Encoding (if applicable)
+        if "positional_encoding" in components:
+            st.markdown("---")
+            pos_enc_info = components["positional_encoding"]
+
+            if pos_enc_info["type"] == "learned":
+                _render_entire_class(
+                    "4. Positional Embeddings (Learned)",
+                    pos_enc_info["module"],
+                    pos_enc_info["class"],
+                    github_repo_url
+                )
+            elif pos_enc_info["type"] == "rope":
+                _render_entire_class(
+                    "4. RoPE (Rotary Position Embedding)",
+                    pos_enc_info["module"],
+                    pos_enc_info["class"],
+                    github_repo_url
+                )
+            elif pos_enc_info["type"] == "alibi":
+                _render_entire_class(
+                    "4. ALiBi (Attention with Linear Biases)",
+                    pos_enc_info["module"],
+                    pos_enc_info["class"],
+                    github_repo_url
+                )
+
+        st.markdown("---")
+
+        # 5. MLP (entire class)
+        _render_entire_class(
+            "5. MLP",
+            "pretraining.mlp.mlp",
+            components["mlp"]["class"],
+            github_repo_url
+        )
+
+        st.markdown("---")
+
+        # 6. Normalization (entire class)
+        norm_file = components["normalization"]["file"]
+        _render_entire_class(
+            "6. Normalization",
+            f"pretraining.normalization.{norm_file}",
+            components["normalization"]["class"],
+            github_repo_url
+        )
+
+        st.markdown("---")
+
+        # 7. Embeddings (entire class)
+        _render_entire_class(
+            "7. Token Embeddings",
+            "pretraining.embeddings.embed",
+            components["embeddings"]["class"],
+            github_repo_url
+        )
+
+
+def _render_function(
+    title: str,
+    module_path: str,
+    function_name: str,
+    github_repo_url: str = "https://github.com/jammastergirish/BuildAnLLM"
+) -> bool:
+    """
+    Render a function with file info and GitHub link.
+    Uses the same underlying function as _render_entire_class since inspect works for both.
+
+    Args:
+        title: Section title
+        module_path: Path to module
+        function_name: Name of function
+        github_repo_url: GitHub repo URL
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        source_code, start_line, end_line, file_path = _get_object_source_with_lines(
+            module_path, function_name
+        )
+        rel_path = _get_file_relative_path(file_path)
+
+        # Display title and file info
+        st.markdown(f"### {title}")
+        st.caption(f"📄 `{rel_path}` (lines {start_line}-{end_line})")
+
+        # GitHub link
+        github_link = _generate_github_link(
+            file_path, start_line, end_line, github_repo_url
+        )
+        st.markdown(f"🔗 [View on GitHub]({github_link})")
+
+        # Code block
+        st.code(source_code, language="python")
+
+        return True
+    except Exception as e:
+        st.warning(f"Could not load code for {title}: {e}")
+        return False
+
+
+def render_finetuning_code_snippets(use_lora: bool = False) -> None:
+    """
+    Render relevant code snippets for fine-tuning based on configuration.
+
+    Args:
+        use_lora: Whether LoRA is being used
+    """
+    github_repo_url = "https://github.com/jammastergirish/BuildAnLLM"
+
+    with st.expander("💻 Code Implementation", expanded=False):
+        # 1. SFT Dataset (entire class)
+        _render_entire_class(
+            "1. SFT Dataset",
+            "finetuning.data.sft_dataset",
+            "SFTDataset",
+            github_repo_url
+        )
+
+        st.markdown("---")
+
+        # 2. SFT Trainer (entire class)
+        _render_entire_class(
+            "2. SFT Trainer",
+            "finetuning.training.sft_trainer",
+            "SFTTrainer",
+            github_repo_url
+        )
+
+        # 3. LoRA (if applicable)
+        if use_lora:
+            st.markdown("---")
+            _render_function(
+                "3. LoRA Conversion",
+                "finetuning.peft.lora_utils",
+                "convert_model_to_lora",
+                github_repo_url
+            )
+
+            st.markdown("---")
+            _render_function(
+                "4. LoRA Matrix Creation",
+                "finetuning.peft.lora_wrappers",
+                "create_lora_matrices",
+                github_repo_url
+            )
+
+            st.markdown("---")
+            _render_function(
+                "5. LoRA Einsum Computation",
+                "finetuning.peft.lora_wrappers",
+                "einsum_with_lora",
+                github_repo_url
+            )
 
 
 def render_finetuning_equations(use_lora: bool = False, lora_rank: int = 8, lora_alpha: float = 8.0) -> None:

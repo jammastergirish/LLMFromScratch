@@ -2,7 +2,7 @@
 
 <img width="847" height="660" alt="Screenshot 2025-12-24 at 20 57 51" src="https://github.com/user-attachments/assets/2fbb32ac-45bd-4b27-9321-79dc65e14242" />
 
-This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model.
+This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model. It is optimized not for speed or cost, but rather for learning.
 
 It offers three learning objectives:
 
