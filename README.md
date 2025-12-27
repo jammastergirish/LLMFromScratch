@@ -2,18 +2,18 @@
 
 <img width="847" height="660" alt="Screenshot 2025-12-24 at 20 57 51" src="https://github.com/user-attachments/assets/2fbb32ac-45bd-4b27-9321-79dc65e14242" />
 
-This repository contains an educational implementation of a training workflow for a transformer-based autoregressive, decoder-only language model. It is optimized not for speed or cost, but rather for learning.
+This repository contains an educational training workflow for a transformer-based autoregressive, decoder-only language model. It is optimized not for speed or cost, but rather for learning.
 
 Users can:
 
 - **Pre-train an LLM from scratch** using a simple, intuitive interface, with a diagram that visualizes their specific configuration.
 - **Fine-tune a pre-trained model** on prompt/response pairs using supervised fine-tuning (SFT), with support for both full-parameter and parameter-efficient fine-tuning via LoRA.
-- **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. The code shown dynamically adapts to your configuration choices.
-- **Work through the equations** to understand the math behind the code, with equations dynamically displayed based on the user's configuration.
+- **Explore the code** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. The code shown dynamically adapts to configuration choices.
+- **Work through equations** to understand the math behind the code, with equations dynamically displayed based on configuration.
 
 I built this as I wanted to properly understand LLMs. A great way to learn is to write code yourself; an even better way to learn is to write code in a general, modular manner that's clean enough for others to read.
 
-I'm incredibly grateful to all those from whom I learned and borrowed ideas (see [Resources](#resources)). I hope others find this repository helpful too!
+I'm incredibly grateful to all those from whom I learned and borrowed ideas (see [Resources](#resources)). I hope others find this repository helpful!
 
 _(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It includes pre-training and supervised fine-tuning (SFT), but not yet RLHF or other advanced fine-tuning techniques.)_
 
