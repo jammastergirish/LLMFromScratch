@@ -76,8 +76,34 @@ class SFTDataset:
         
         print(f"Loaded {len(self.prompts)} prompt/response pairs")
         
+        # Validate that we have data
+        if len(self.prompts) == 0:
+            raise ValueError("CSV file is empty! Please provide at least one prompt/response pair.")
+        
+        # Validate that responses are not all empty
+        empty_responses = sum(1 for r in self.responses if not str(r).strip())
+        if empty_responses == len(self.responses):
+            raise ValueError(
+                "All responses are empty! Please ensure your CSV has non-empty response values. "
+                "The model needs response tokens to learn from."
+            )
+        if empty_responses > 0:
+            print(f"Warning: {empty_responses} out of {len(self.responses)} responses are empty. "
+                  "These will be skipped during training.")
+        
         # Create sequences
         self.X, self.Y, self.masks = self._create_sequences()
+        
+        # Validate that we have response tokens after processing
+        total_response_tokens = self.masks.sum().item()
+        if total_response_tokens == 0:
+            raise ValueError(
+                "No response tokens found after processing! This could happen if:\n"
+                "1. All prompts are too long (exceeding max_length)\n"
+                "2. All responses are empty\n"
+                "3. max_length is too small\n"
+                "Please check your data and increase max_length if needed."
+            )
         
         # Split into train/val
         self.X_train, self.Y_train, self.masks_train, \

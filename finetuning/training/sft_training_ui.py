@@ -69,9 +69,19 @@ def train_sft_model_thread(
 
     except Exception as e:
         import traceback
+        error_msg = f"Error during fine-tuning: {str(e)}"
+        traceback_str = traceback.format_exc()
+        print(error_msg)
+        print(traceback_str)
         with lock:
-            shared_logs.append(f"Error during fine-tuning: {str(e)}")
-            shared_logs.append(traceback.format_exc())
+            shared_logs.append("=" * 80)
+            shared_logs.append("ERROR DETECTED")
+            shared_logs.append("=" * 80)
+            shared_logs.append(error_msg)
+            shared_logs.append("")
+            shared_logs.append("Full traceback:")
+            shared_logs.append(traceback_str)
+            shared_logs.append("=" * 80)
             training_active_flag[0] = False
 
 
@@ -121,7 +131,17 @@ def _sft_training_step(trainer, iter_num, first_loss_set):
     loss_unmasked = torch.nn.functional.cross_entropy(
         logits_flat, targets_flat, reduction='none'
     )
-    loss = (loss_unmasked * masks_flat).sum() / masks_flat.sum().clamp(min=1)
+    
+    # Check if there are any response tokens (mask == 1)
+    mask_sum = masks_flat.sum()
+    if mask_sum == 0:
+        raise ValueError(
+            "No response tokens found in batch! All masks are 0. "
+            "This means the model has no response tokens to learn from. "
+            "Check your dataset - prompts might be too long or responses might be empty."
+        )
+    
+    loss = (loss_unmasked * masks_flat).sum() / mask_sum
 
     trainer.optimizer.zero_grad()
     loss.backward()

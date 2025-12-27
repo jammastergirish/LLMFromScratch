@@ -9,7 +9,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from pretraining.model.model_loader import load_model_from_checkpoint
 from pretraining.tokenization.tokenizer import (
     CharacterTokenizer,
     SimpleBPETokenizer,
@@ -22,6 +21,70 @@ from finetuning.training.finetuning_args import FinetuningArgs
 from finetuning.training.sft_training_ui import train_sft_model_thread
 from pretraining.training.training_ui import initialize_training_state
 from ui_components import render_checkpoint_selector, render_finetuning_equations
+from config import PositionalEncoding
+
+
+def _extend_positional_embeddings(pos_embed_module, new_max_length: int):
+    """
+    Extend positional embeddings to support longer sequences.
+
+    Uses interpolation to extend the embedding matrix. This is a common
+    technique for extending pre-trained positional embeddings to longer contexts.
+
+    Args:
+        pos_embed_module: The positional embedding module (PosEmbedWithEinops or PosEmbedWithoutEinops)
+        new_max_length: New maximum sequence length
+    """
+    import torch
+
+    old_W_pos = pos_embed_module.W_pos  # [old_n_ctx, d_model]
+    old_n_ctx, d_model = old_W_pos.shape
+
+    if new_max_length <= old_n_ctx:
+        # No extension needed
+        return
+
+    # Create new embedding matrix
+    new_W_pos = torch.empty((new_max_length, d_model),
+                            device=old_W_pos.device, dtype=old_W_pos.dtype)
+
+    # Copy existing embeddings
+    new_W_pos[:old_n_ctx] = old_W_pos
+
+    # For positions beyond the original length, use interpolation
+    # Method: Use the last few positions to extrapolate smoothly
+    if old_n_ctx >= 2:
+        # Use the trend from the last few positions
+        # Compute average "velocity" (difference between consecutive positions)
+        # and extrapolate
+        last_few = min(10, old_n_ctx)  # Use last 10 positions or all if fewer
+        recent_embeds = old_W_pos[-last_few:]  # [last_few, d_model]
+
+        # Compute average change per position
+        if last_few >= 2:
+            diffs = recent_embeds[1:] - \
+                recent_embeds[:-1]  # [last_few-1, d_model]
+            # [d_model] - average change per position
+            avg_diff = diffs.mean(dim=0)
+        else:
+            avg_diff = torch.zeros_like(old_W_pos[-1])
+
+        # Extrapolate: start from last position and add scaled differences
+        last_embed = old_W_pos[-1]  # [d_model]
+        for i in range(old_n_ctx, new_max_length):
+            # Scale the difference based on how far we are from the original range
+            # Use a decay factor to prevent embeddings from growing too large
+            steps_from_end = i - old_n_ctx + 1
+            decay = 0.9 ** steps_from_end  # Exponential decay
+            new_W_pos[i] = last_embed + avg_diff * steps_from_end * decay
+    else:
+        # If only one position, just repeat it
+        new_W_pos[old_n_ctx:] = old_W_pos[-1]
+
+    # Update the parameter
+    pos_embed_module.W_pos = torch.nn.Parameter(new_W_pos)
+    # Update cfg.n_ctx to reflect the new max length
+    pos_embed_module.cfg.n_ctx = new_max_length
 
 
 def _start_finetuning_workflow(
@@ -50,6 +113,44 @@ def _start_finetuning_workflow(
             selected_checkpoint_path, device
         )
         model.train()  # Set to training mode
+
+        # Check sequence length compatibility
+        model_max_length = cfg.n_ctx if hasattr(cfg, 'n_ctx') else 256
+        if max_length > model_max_length:
+            # Check if model uses learned positional embeddings (GPT)
+            uses_learned_pos = (
+                hasattr(cfg, 'positional_encoding') and
+                cfg.positional_encoding == PositionalEncoding.LEARNED
+            )
+
+            if uses_learned_pos:
+                # Extend positional embeddings if needed
+                if hasattr(model, 'pos_embed') and model.pos_embed is not None:
+                    _extend_positional_embeddings(model.pos_embed, max_length)
+                    st.info(
+                        f"✅ Extended positional embeddings from {model_max_length} to {max_length} tokens. "
+                        f"Model can now handle sequences up to {max_length} tokens."
+                    )
+                else:
+                    st.error(
+                        f"Model was trained with max sequence length {model_max_length}, "
+                        f"but fine-tuning requested {max_length}. "
+                        f"Please set max_length to {model_max_length} or less."
+                    )
+                    st.stop()
+            else:
+                # RoPE and ALiBi can handle longer sequences, but warn if significantly longer
+                if max_length > model_max_length * 2:
+                    st.warning(
+                        f"⚠️ Model was trained with max sequence length {model_max_length}, "
+                        f"but fine-tuning will use {max_length}. "
+                        f"RoPE/ALiBi can handle longer sequences, but performance may degrade."
+                    )
+                else:
+                    st.info(
+                        f"ℹ️ Model context length: {model_max_length}, Fine-tuning length: {max_length}. "
+                        f"Using {cfg.positional_encoding.value if hasattr(cfg, 'positional_encoding') else 'positional encoding'} which supports variable length sequences."
+                    )
 
     # Apply LoRA if selected
     if use_lora:
@@ -341,11 +442,19 @@ def _render_active_training_ui():
     # Training logs
     if training_logs:
         st.header("📝 Fine-Tuning Logs (Console Output)")
-        with st.expander("View All Logs", expanded=True):
+        # Check if there's an error in the logs
+        has_error = any(
+            "Error during fine-tuning" in log or "ERROR DETECTED" in log for log in training_logs)
+        with st.expander("View All Logs", expanded=has_error):
             log_text = "\n".join(training_logs)
             st.text_area("Logs", value=log_text, height=400,
                          label_visibility="collapsed", disabled=True)
         st.caption(f"Showing {len(training_logs)} log entries")
+
+        # If there's an error, show it prominently
+        if has_error:
+            st.error(
+                "⚠️ **Error detected in logs above. Please scroll up to see the full error message and traceback.**")
 
 
 def _render_completed_training_ui():

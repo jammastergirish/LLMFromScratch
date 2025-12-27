@@ -72,9 +72,19 @@ class SFTTrainer:
         if hasattr(args, 'use_lora') and args.use_lora:
             from finetuning.peft.lora_utils import get_lora_parameters
             trainable_params = get_lora_parameters(self.model)
+            if len(trainable_params) == 0:
+                raise ValueError(
+                    "No LoRA parameters found! Make sure LoRA was applied correctly to the model. "
+                    "Check that convert_model_to_lora was called before creating the trainer."
+                )
             print(f"Optimizing {len(trainable_params)} LoRA parameter groups")
         else:
             trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+            if len(trainable_params) == 0:
+                raise ValueError(
+                    "No trainable parameters found! All model parameters are frozen. "
+                    "This might happen if LoRA was applied but use_lora=False, or if all parameters were manually frozen."
+                )
         
         self.optimizer = torch.optim.AdamW(
             trainable_params, lr=args.lr, weight_decay=args.weight_decay
