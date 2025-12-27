@@ -15,7 +15,7 @@ I built this as I wanted to properly understand LLMs. A great way to learn is to
 
 I'm incredibly grateful to all those from whom I learned and borrowed ideas (see [Resources](#resources)). I hope others find this repository helpful!
 
-_(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It includes pre-training and supervised fine-tuning (SFT), but not yet RLHF or other advanced fine-tuning techniques.)_
+_(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and includes Mixture of Experts (MoE) architectures (like DeepSeek-V2 and Mixtral). It does not include encoder-only models (like BERT) or encoder-decoder models (like T5). It includes pre-training and supervised fine-tuning (SFT), but not yet RLHF or other advanced fine-tuning techniques.)_
 
 ## What You'll Learn
 
@@ -24,6 +24,7 @@ By exploring the interface and codebase, you'll gain a deep understanding of:
 - **Transformer Architecture**: How decoder-only language models work from the ground up
 - **Core Components**: Attention mechanisms, normalization layers, positional encodings, and feedforward networks
 - **Architecture Variants**: Differences between GPT, LLaMA, and OLMo implementations
+- **Mixture of Experts (MoE)**: How MoE architectures use multiple expert MLPs with routing to scale model capacity efficiently
 - **Pre-Training Process**: How to pre-train a language model using next-token prediction on raw text
 - **Fine-Tuning Process**: How to fine-tune a pre-trained model on prompt/response pairs using supervised fine-tuning (SFT)
 - **Loss Masking**: How to compute loss only on response tokens (not prompt tokens) during fine-tuning
@@ -77,7 +78,10 @@ The app will open in your browser with the following pages:
    - **🚀 GPT-2**: Learned positional embeddings, LayerNorm, GELU activation
    - **🦙 LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation
    - **🔬 OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation
+   - **🔷 DeepSeek V2**: LLaMA-style with MoE (64 experts, top-6, 2 shared experts)
+   - **🦙 Llama MoE**: LLaMA-style with MoE (8 experts, top-2, Mixtral-style)
 3. Configure model dimensions (or use size presets: small, medium, full)
+4. Optionally enable MoE (Mixture of Experts) and configure expert settings
 4. Set training hyperparameters (batch size, learning rate, epochs, etc.)
 5. Click "Start Training" to begin
 
@@ -318,6 +322,14 @@ optimizer.step()
 - `n_ctx`: Context length (max sequence length)
 - `d_vocab`: Vocabulary size
 - `architecture`: Architecture type (GPT, LLaMA, or OLMo)
+- **MoE Configuration** (when `use_moe=True`):
+  - `num_experts`: Number of expert MLPs (e.g., 8, 64)
+  - `num_experts_per_tok`: Top-k experts to activate per token (e.g., 2, 6)
+  - `use_shared_experts`: Enable shared experts (DeepSeek-style)
+  - `num_shared_experts`: Number of always-active shared experts
+  - `router_type`: Routing strategy (`top_k` or `top_k_with_shared`)
+  - `load_balancing_loss_weight`: Weight for load balancing auxiliary loss
+  - `expert_capacity_factor`: Capacity factor for expert load balancing
 
 #### `TransformerTrainingArgs` - Training Hyperparameters
 - `batch_size`: Number of sequences per batch
@@ -1067,6 +1079,100 @@ Hidden: [batch, posn, d_mlp]  # gate * up (element-wise)
 Project: [batch, posn, d_model]  # e.g., [32, 128, 256]
 ```
 
+#### MoE Architecture (Mixture of Experts)
+
+**Purpose**: Scale model capacity efficiently by using multiple expert MLPs and routing tokens to a subset of experts.
+
+**Key Concept**: Instead of one large MLP, MoE uses multiple smaller expert MLPs. For each token, a router selects the top-k experts to activate, allowing the model to have more parameters while keeping computation per token similar.
+
+**Architecture Flow:**
+```
+Input: [batch, posn, d_model]
+  ↓
+Router Network → [batch, posn, num_experts] (logits)
+  ↓
+Softmax → Router Probabilities
+  ↓
+Top-k Selection → Select k experts per token
+  ↓
+Expert MLPs (only selected experts compute)
+  ↓
+Weighted Combination → [batch, posn, d_model]
+  ↓
+(+ Shared Experts if enabled)
+  ↓
+Output: [batch, posn, d_model]
+```
+
+**Routing Strategies:**
+
+1. **Top-k Routing** (Mixtral-style):
+   - Router computes logits for all experts
+   - Selects top-k experts per token
+   - Combines expert outputs with routing weights
+   - Only k experts compute per token (sparse activation)
+
+2. **Top-k with Shared Experts** (DeepSeek-style):
+   - Same as top-k, but some experts are always active
+   - Shared experts handle general knowledge
+   - Routed experts specialize based on input
+   - Final output = shared_experts(x) + routed_experts(x)
+
+**Load Balancing Loss:**
+- Auxiliary loss encourages uniform expert usage
+- Prevents expert collapse (where only a few experts are used)
+- Formula: `aux_loss = num_experts * sum(P_i * f_i)` where:
+  - `P_i` = average routing probability for expert i
+  - `f_i` = fraction of tokens routed to expert i
+- Added to main loss: `total_loss = loss + aux_loss * load_balancing_loss_weight`
+
+**Benefits:**
+- **Scalability**: Can have many experts (e.g., 64) while only activating a few per token
+- **Efficiency**: Computation scales with activated experts, not total experts
+- **Specialization**: Different experts can specialize in different patterns
+
+**Implementation** (`pretraining/mlp/mlp.py`):
+
+```python
+class MoEMLPBase(nn.Module):
+    def forward(self, residual):
+        # Router: [batch, seq_len, d_model] -> [batch, seq_len, num_experts]
+        router_logits = self.router(residual)
+        router_probs = F.softmax(router_logits, dim=-1)
+        
+        # Select top-k experts
+        top_k_probs, top_k_indices = torch.topk(
+            router_probs, k=self.num_experts_per_tok, dim=-1
+        )
+        
+        # Process each expert
+        output = torch.zeros_like(residual)
+        for expert_idx in range(self.num_experts):
+            # Get expert output and weight by routing probability
+            expert_output = self.experts[expert_idx](residual)
+            expert_weights = ...  # Extract from top_k_probs
+            output += expert_weights.unsqueeze(-1) * expert_output
+        
+        # Add shared experts if enabled
+        if self.use_shared_experts:
+            shared_output = sum(expert(residual) for expert in self.shared_experts)
+            output += shared_output / len(self.shared_experts)
+        
+        # Compute load balancing loss
+        aux_loss = self._compute_load_balancing_loss(...)
+        
+        return output, aux_loss
+```
+
+**Shape Flow:**
+```
+Input: [batch, posn, d_model]  # e.g., [32, 128, 256]
+Router: [batch, posn, num_experts]  # e.g., [32, 128, 8]
+Top-k: [batch, posn, k]  # e.g., [32, 128, 2] (indices and probs)
+Expert Outputs: [batch, posn, d_model]  # from each selected expert
+Weighted Sum: [batch, posn, d_model]  # e.g., [32, 128, 256]
+```
+
 ---
 
 ### 6. Transformer Block (`pretraining/transformer_blocks/transformer_block.py`)
@@ -1203,6 +1309,40 @@ Final LayerNorm → [batch, position, d_model]
 Unembedding → [batch, position, d_vocab] (logits)
 ```
 
+**MoE Architecture (DeepSeek V2 / Mixtral-style):**
+```
+Tokens [batch, position]
+  ↓
+Token Embeddings → [batch, position, d_model]
+  ↓
+(No positional embedding layer - RoPE applied in attention)
+  ↓
+Transformer Block 1 (with RoPE + MoE MLP) → [batch, position, d_model]
+  ↓
+...
+  ↓
+Transformer Block N (with RoPE + MoE MLP) → [batch, position, d_model]
+  ↓
+Final RMSNorm → [batch, position, d_model]
+  ↓
+Unembedding → [batch, position, d_vocab] (logits)
+```
+
+**MoE Transformer Block:**
+```
+Input: [batch, posn, d_model]
+  ↓
+LayerNorm → Attention → + (residual)
+  ↓
+LayerNorm → MoE MLP → + (residual)
+  │         │
+  │         ├─ Router → Top-k Selection
+  │         ├─ Expert MLPs (sparse activation)
+  │         └─ Load Balancing Loss (auxiliary)
+  ↓
+Output: [batch, posn, d_model]
+```
+
 #### Implementation
 
 The model automatically selects components based on `cfg.architecture`:
@@ -1221,8 +1361,14 @@ def forward(self, tokens):
     # OLMo: ALiBi is applied inside attention blocks
     
     # Pass through transformer blocks
+    aux_losses = []
     for block in self.blocks:
-        residual = block(residual)  # [batch, position, d_model]
+        residual, aux_loss = block(residual)  # [batch, position, d_model]
+        if aux_loss is not None:  # MoE auxiliary loss
+            aux_losses.append(aux_loss)
+    
+    # Aggregate MoE auxiliary losses
+    total_aux_loss = sum(aux_losses) if aux_losses else None
     
     # Final normalization (LayerNorm for GPT/OLMo, RMSNorm for LLaMA)
     residual = self.ln_f(residual)  # [batch, position, d_model]
@@ -1230,6 +1376,9 @@ def forward(self, tokens):
     # Unembedding to logits
     logits = torch.matmul(residual, self.unembed)
     
+    # Return logits and auxiliary loss if MoE is enabled
+    if total_aux_loss is not None:
+        return logits, total_aux_loss
     return logits
 ```
 
@@ -1261,6 +1410,9 @@ def forward(self, tokens):
 - [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) - GPT-2 paper
 - [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/pdf/2302.13971) - LLaMA paper
 - [OLMo: Accelerating the Science of Language Models](https://arxiv.org/pdf/2402.00838) - OLMo paper
+- [Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer](https://arxiv.org/pdf/1701.06538) - Original MoE paper
+- [Mixtral of Experts](https://arxiv.org/pdf/2401.04088) - Mixtral MoE paper
+- [DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model](https://arxiv.org/pdf/2405.04434) - DeepSeek V2 MoE paper
 
 ### Documentation
 - [PyTorch](https://docs.pytorch.org/docs/stable/index.html)

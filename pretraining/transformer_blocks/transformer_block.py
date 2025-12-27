@@ -1,10 +1,18 @@
 from torch import nn
 from jaxtyping import Float
 from torch import Tensor
-from typing import Optional
+from typing import Optional, Tuple
 from pretraining.attention.attention import AttentionWithEinops, AttentionWithoutEinops
 from pretraining.mlp.mlp import create_mlp_layer
 from pretraining.normalization.layernorm import create_norm_layer
+
+
+def _extract_mlp_output_and_aux_loss(mlp_output):
+    """Extract output and auxiliary loss from MLP (handles both MoE and standard MLPs)."""
+    aux_loss = None
+    if isinstance(mlp_output, tuple):
+        mlp_output, aux_loss = mlp_output
+    return mlp_output, aux_loss
 
 
 class TransformerBlockWithEinops(nn.Module):
@@ -21,7 +29,7 @@ class TransformerBlockWithEinops(nn.Module):
         residual: Float[Tensor, "batch posn d_model"],
         cache: Optional[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]] = None,
         start_pos: int = 0
-    ) -> tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]]:
+    ) -> Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]], Optional[Float[Tensor, ""]]]:
         # residual: [batch, posn, d_model]
 
         # Pre-norm attention with residual connection
@@ -33,11 +41,13 @@ class TransformerBlockWithEinops(nn.Module):
 
         # Pre-norm MLP with residual connection
         # ln2(residual): [batch, posn, d_model]
-        # mlp(...): [batch, posn, d_model]
+        # mlp(...): [batch, posn, d_model] or (output, aux_loss) if MoE
         # residual: [batch, posn, d_model]
-        residual = residual + self.mlp(self.ln2(residual))
+        mlp_output = self.mlp(self.ln2(residual))
+        mlp_output, aux_loss = _extract_mlp_output_and_aux_loss(mlp_output)
+        residual = residual + mlp_output
 
-        return residual, new_cache
+        return residual, new_cache, aux_loss
 
 
 class TransformerBlockWithoutEinops(nn.Module):
@@ -54,7 +64,7 @@ class TransformerBlockWithoutEinops(nn.Module):
         residual: Float[Tensor, "batch posn d_model"],
         cache: Optional[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]] = None,
         start_pos: int = 0
-    ) -> tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]]:
+    ) -> Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]], Optional[Float[Tensor, ""]]]:
         # residual: [batch, posn, d_model]
 
         # Pre-norm attention with residual connection
@@ -66,11 +76,13 @@ class TransformerBlockWithoutEinops(nn.Module):
 
         # Pre-norm MLP with residual connection
         # ln2(residual): [batch, posn, d_model]
-        # mlp(...): [batch, posn, d_model]
+        # mlp(...): [batch, posn, d_model] or (output, aux_loss) if MoE
         # residual: [batch, posn, d_model]
-        residual = residual + self.mlp(self.ln2(residual))
+        mlp_output = self.mlp(self.ln2(residual))
+        mlp_output, aux_loss = _extract_mlp_output_and_aux_loss(mlp_output)
+        residual = residual + mlp_output
 
-        return residual, new_cache
+        return residual, new_cache, aux_loss
 
 
 def create_transformer_block(cfg, use_einops=True, rope=None, alibi=None):

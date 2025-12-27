@@ -7,6 +7,41 @@ import matplotlib.pyplot as plt
 from pretraining.training.training_args import TransformerTrainingArgs
 
 
+def _extract_model_output_and_aux_loss(model_output):
+    """Extract logits and auxiliary loss from model output (handles both MoE and standard models)."""
+    if isinstance(model_output, tuple):
+        # Handle different return formats:
+        # - (logits, cache, aux_loss) - MoE with cache
+        # - (logits, cache) - standard with cache
+        # - (logits, aux_loss) - MoE without cache
+        if len(model_output) == 3:
+            logits, _, aux_loss = model_output
+        elif len(model_output) == 2:
+            # Could be (logits, cache) or (logits, aux_loss)
+            # Check if second element is a list (cache) or scalar (aux_loss)
+            if isinstance(model_output[1], list):
+                logits, _ = model_output
+                aux_loss = None
+            else:
+                logits, aux_loss = model_output
+        else:
+            logits = model_output[0]
+            aux_loss = None
+    else:
+        logits = model_output
+        aux_loss = None
+    return logits, aux_loss
+
+
+def _add_aux_loss_to_main_loss(loss, aux_loss, model):
+    """Add auxiliary loss to main loss if MoE is enabled."""
+    if aux_loss is not None:
+        cfg = model.cfg if hasattr(model, "cfg") else None
+        if cfg and hasattr(cfg, "load_balancing_loss_weight"):
+            loss = loss + aux_loss * cfg.load_balancing_loss_weight
+    return loss
+
+
 class TransformerTrainer:
     def __init__(
         self,
@@ -74,11 +109,14 @@ class TransformerTrainer:
                 x_batch = split_X[idx].to(self.device)
                 y_batch = split_Y[idx].to(self.device)
 
-                logits = self.model(x_batch)
+                model_output = self.model(x_batch)
+                logits, aux_loss = _extract_model_output_and_aux_loss(model_output)
+                
                 # Reshape for cross_entropy: (batch*seq, vocab) and (batch*seq,)
                 loss = F.cross_entropy(
                     logits.view(-1, logits.size(-1)), y_batch.view(-1)
                 )
+                loss = _add_aux_loss_to_main_loss(loss, aux_loss, self.model)
                 losses[k] = loss.item()
             out[split_name] = losses.mean().item()
         self.model.train()
@@ -107,13 +145,17 @@ class TransformerTrainer:
 
             # Forward pass
             # logits: [batch_size, seq_len, vocab_size]
-            logits = self.model(x_batch)
+            # May return (logits, aux_loss) if MoE is enabled
+            model_output = self.model(x_batch)
+            logits, aux_loss = _extract_model_output_and_aux_loss(model_output)
+            
             # Reshape for cross_entropy
             # logits.view(-1, logits.size(-1)): [batch_size * seq_len, vocab_size]
             # y_batch.view(-1): [batch_size * seq_len]
             loss = F.cross_entropy(
                 logits.view(-1, logits.size(-1)), y_batch.view(-1)
             )
+            loss = _add_aux_loss_to_main_loss(loss, aux_loss, self.model)
 
             # Backward pass
             self.optimizer.zero_grad()

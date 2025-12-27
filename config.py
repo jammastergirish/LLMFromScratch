@@ -26,6 +26,11 @@ class Activation(str, Enum):
     SWIGLU = "swiglu"  # SwiGLU activation (LLaMA, OLMo style)
 
 
+class RouterType(str, Enum):
+    TOP_K = "top_k"  # Standard top-k routing
+    TOP_K_WITH_SHARED = "top_k_with_shared"  # Top-k with shared experts (DeepSeek-style)
+
+
 @dataclass
 class ModelConfig:
     # Architecture selection (required - no default)
@@ -51,6 +56,16 @@ class ModelConfig:
     # LLaMA-specific
     rope_theta: float = 10000.0  # Base frequency for RoPE
 
+    # MoE (Mixture of Experts) configuration
+    use_moe: bool = False  # Enable/disable MoE
+    num_experts: int = 8  # Number of expert MLPs
+    num_experts_per_tok: int = 2  # Top-k experts to activate per token
+    use_shared_experts: bool = False  # Enable shared experts (DeepSeek-style)
+    num_shared_experts: int = 2  # Number of always-active shared experts
+    router_type: Union[RouterType, None] = None  # Routing strategy
+    load_balancing_loss_weight: float = 0.01  # Weight for load balancing loss
+    expert_capacity_factor: float = 1.25  # Capacity factor for expert load balancing
+
     def __post_init__(self):
         """Set defaults based on architecture if not explicitly provided"""
         if self.positional_encoding is None:
@@ -74,6 +89,13 @@ class ModelConfig:
                 self.activation = Activation.GELU
             else:  # LLaMA, OLMo
                 self.activation = Activation.SWIGLU
+
+        # Set default router_type based on use_shared_experts if not explicitly set
+        if self.use_moe and self.router_type is None:
+            if self.use_shared_experts:
+                self.router_type = RouterType.TOP_K_WITH_SHARED
+            else:
+                self.router_type = RouterType.TOP_K
 
     @classmethod
     def gpt_small(cls):
@@ -223,6 +245,10 @@ class ModelConfig:
         act = config_dict.get("activation")
         if isinstance(act, Enum):
             config_dict["activation"] = act.value
+        # Handle router_type
+        router = config_dict.get("router_type")
+        if isinstance(router, Enum):
+            config_dict["router_type"] = router.value
         # None values are already None, no need to set them again
         return config_dict
 
@@ -252,4 +278,13 @@ class ModelConfig:
                     config_dict["activation"])
             elif config_dict["activation"] is None:
                 pass  # Keep None
+        if "router_type" in config_dict:
+            router = config_dict["router_type"]
+            if isinstance(router, str):
+                config_dict["router_type"] = RouterType(router)
+            elif router is None:
+                pass  # Keep None
+        # Ensure backward compatibility: if use_moe is False and router_type not set, keep router_type as None
+        if not config_dict.get("use_moe", False) and "router_type" not in config_dict:
+            config_dict["router_type"] = None
         return cls(**config_dict)

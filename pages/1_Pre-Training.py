@@ -23,7 +23,9 @@ from ui_components import (
 # Define helper functions first
 def _create_model_config(model_config: dict) -> ModelConfig:
     """Create ModelConfig from UI config dict."""
-    return ModelConfig(
+    from config import RouterType
+
+    cfg = ModelConfig(
         architecture=Architecture.GPT,  # Base, doesn't matter
         d_model=model_config["d_model"],
         n_heads=model_config["n_heads"],
@@ -36,7 +38,19 @@ def _create_model_config(model_config: dict) -> ModelConfig:
         normalization=Normalization(model_config["normalization"]),
         activation=Activation(model_config["activation"]),
         rope_theta=model_config.get("rope_theta", 10000.0),
+        use_moe=model_config.get("use_moe", False),
+        num_experts=model_config.get("num_experts", 8),
+        num_experts_per_tok=model_config.get("num_experts_per_tok", 2),
+        use_shared_experts=model_config.get("use_shared_experts", False),
+        num_shared_experts=model_config.get("num_shared_experts", 2),
+        router_type=RouterType(model_config.get(
+            "router_type", "top_k")) if model_config.get("use_moe", False) else None,
+        load_balancing_loss_weight=model_config.get(
+            "load_balancing_loss_weight", 0.01),
+        expert_capacity_factor=model_config.get(
+            "expert_capacity_factor", 1.25),
     )
+    return cfg
 
 
 def _start_training_workflow(uploaded_file, model_config, tokenizer_type, use_einops,

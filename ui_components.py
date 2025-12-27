@@ -538,17 +538,54 @@ def apply_architecture_preset(preset_name: str, config: Dict) -> None:
         config["normalization"] = "layernorm"
         config["activation"] = "gelu"
         config["tokenizer_type"] = "bpe-tiktoken"
+        config["use_moe"] = False
     elif preset_name == "LLAMA":
         config["positional_encoding"] = "rope"
         config["normalization"] = "rmsnorm"
         config["activation"] = "swiglu"
         config["tokenizer_type"] = "sentencepiece"
         config["rope_theta"] = 10000.0
+        config["use_moe"] = False
     elif preset_name == "OLMO":
         config["positional_encoding"] = "alibi"
         config["normalization"] = "layernorm"
         config["activation"] = "swiglu"
         config["tokenizer_type"] = "sentencepiece"
+        config["use_moe"] = False
+
+
+def apply_deepseek_v2_preset(config: Dict) -> None:
+    """Apply DeepSeek V2 preset with MoE."""
+    config["positional_encoding"] = "rope"
+    config["normalization"] = "rmsnorm"
+    config["activation"] = "swiglu"
+    config["tokenizer_type"] = "sentencepiece"
+    config["rope_theta"] = 10000.0
+    config["use_moe"] = True
+    config["num_experts"] = 64
+    config["num_experts_per_tok"] = 6
+    config["use_shared_experts"] = True
+    config["num_shared_experts"] = 2
+    config["router_type"] = "top_k_with_shared"
+    config["load_balancing_loss_weight"] = 0.01
+    config["expert_capacity_factor"] = 1.25
+
+
+def apply_llama_moe_preset(config: Dict) -> None:
+    """Apply Llama MoE (Mixtral-style) preset."""
+    config["positional_encoding"] = "rope"
+    config["normalization"] = "rmsnorm"
+    config["activation"] = "swiglu"
+    config["tokenizer_type"] = "sentencepiece"
+    config["rope_theta"] = 10000.0
+    config["use_moe"] = True
+    config["num_experts"] = 8
+    config["num_experts_per_tok"] = 2
+    config["use_shared_experts"] = False
+    config["num_shared_experts"] = 0
+    config["router_type"] = "top_k"
+    config["load_balancing_loss_weight"] = 0.01
+    config["expert_capacity_factor"] = 1.25
 
 
 def render_model_config_ui() -> Dict:
@@ -575,6 +612,9 @@ def render_model_config_ui() -> Dict:
     if config["positional_encoding"] == "rope":
         _render_rope_settings(config)
 
+    # MoE settings (conditional)
+    _render_moe_settings(config)
+
     return config
 
 
@@ -593,13 +633,21 @@ def _get_default_config() -> Dict:
         "d_mlp": 1024,
         "rope_theta": 10000.0,
         "tokenizer_type": "bpe-tiktoken",
+        "use_moe": False,
+        "num_experts": 8,
+        "num_experts_per_tok": 2,
+        "use_shared_experts": False,
+        "num_shared_experts": 2,
+        "router_type": "top_k",
+        "load_balancing_loss_weight": 0.01,
+        "expert_capacity_factor": 1.25,
     }
 
 
 def _render_preset_buttons(config: Dict) -> None:
     """Render architecture preset buttons."""
     st.subheader("Quick Presets")
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1.5])
 
     with col1:
         if st.button("🚀 GPT-2", width='stretch'):
@@ -620,8 +668,20 @@ def _render_preset_buttons(config: Dict) -> None:
             st.rerun()
 
     with col4:
-        with st.expander("ℹ️ About Presets", expanded=False):
-            st.markdown(_get_preset_info())
+        if st.button("🔷 DeepSeek V2", width='stretch'):
+            apply_deepseek_v2_preset(config)
+            apply_model_size_preset(config.get("model_size", "small"), config)
+            st.rerun()
+
+    with col5:
+        if st.button("🦙 Llama MoE", width='stretch'):
+            apply_llama_moe_preset(config)
+            apply_model_size_preset(config.get("model_size", "small"), config)
+            st.rerun()
+
+    st.markdown("---")
+    with st.expander("ℹ️ About Presets", expanded=False):
+        st.markdown(_get_preset_info())
 
 
 def _render_model_components(config: Dict) -> None:
@@ -745,6 +805,86 @@ def _render_rope_settings(config: Dict) -> None:
     )
 
 
+def _render_moe_settings(config: Dict) -> None:
+    """Render MoE (Mixture of Experts) configuration settings."""
+    st.subheader("Mixture of Experts (MoE)")
+
+    config["use_moe"] = st.checkbox(
+        "Enable MoE",
+        value=config.get("use_moe", False),
+        help="Enable Mixture of Experts: use multiple expert MLPs with routing"
+    )
+
+    if config["use_moe"]:
+        with st.expander("MoE Configuration", expanded=True):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                config["num_experts"] = st.slider(
+                    "Number of Experts",
+                    min_value=2,
+                    max_value=64,
+                    value=config.get("num_experts", 8),
+                    step=1,
+                    help="Total number of expert MLPs"
+                )
+                config["num_experts_per_tok"] = st.slider(
+                    "Experts per Token (Top-k)",
+                    min_value=1,
+                    max_value=8,
+                    value=config.get("num_experts_per_tok", 2),
+                    step=1,
+                    help="Number of experts to activate per token (top-k routing)"
+                )
+                config["router_type"] = st.selectbox(
+                    "Router Type",
+                    ["top_k", "top_k_with_shared"],
+                    index=0 if config.get(
+                        "router_type", "top_k") == "top_k" else 1,
+                    help="Top-k: Standard routing\nTop-k with Shared: Some experts always active (DeepSeek-style)"
+                )
+
+            with col2:
+                config["use_shared_experts"] = st.checkbox(
+                    "Use Shared Experts",
+                    value=config.get("use_shared_experts", False),
+                    help="Enable shared experts that are always active (DeepSeek-style)"
+                )
+                if config["use_shared_experts"]:
+                    config["num_shared_experts"] = st.slider(
+                        "Number of Shared Experts",
+                        min_value=1,
+                        max_value=8,
+                        value=config.get("num_shared_experts", 2),
+                        step=1,
+                        help="Number of always-active shared experts"
+                    )
+                config["load_balancing_loss_weight"] = st.number_input(
+                    "Load Balancing Loss Weight",
+                    min_value=0.0,
+                    max_value=0.1,
+                    value=config.get("load_balancing_loss_weight", 0.01),
+                    step=0.001,
+                    format="%.3f",
+                    help="Weight for load balancing auxiliary loss (encourages uniform expert usage)"
+                )
+                config["expert_capacity_factor"] = st.number_input(
+                    "Expert Capacity Factor",
+                    min_value=1.0,
+                    max_value=2.0,
+                    value=config.get("expert_capacity_factor", 1.25),
+                    step=0.05,
+                    format="%.2f",
+                    help="Capacity factor for expert load balancing (higher = more capacity per expert)"
+                )
+
+        # Update router_type based on use_shared_experts if needed
+        if config["use_shared_experts"]:
+            config["router_type"] = "top_k_with_shared"
+        elif config.get("router_type") == "top_k_with_shared" and not config["use_shared_experts"]:
+            config["router_type"] = "top_k"
+
+
 def _get_preset_info() -> str:
     """Get preset information markdown."""
     return """
@@ -752,11 +892,19 @@ def _get_preset_info() -> str:
     - **GPT-2**: Learned positional embeddings, LayerNorm, GELU activation, BPE-tiktoken (GPT-2 style)
     - **LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation, SentencePiece tokenizer
     - **OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation, SentencePiece tokenizer
+    - **DeepSeek V2**: LLaMA-style with MoE (64 experts, top-6, 2 shared experts)
+    - **Llama MoE**: LLaMA-style with MoE (8 experts, top-2, Mixtral-style)
 
     **Model Size:**
     - Controls model dimensions (d_model, n_heads, n_layers, etc.)
     - All presets use the same dimensions for each size
     - Clicking a preset uses the currently selected model size
+
+    **MoE (Mixture of Experts):**
+    - MoE models use multiple expert MLPs with routing
+    - Only a subset of experts are activated per token (more efficient)
+    - DeepSeek V2 uses shared experts (always active) + routed experts
+    - Llama MoE uses standard top-k routing
 
     **Customization:**
     - All options below can be manually adjusted after selecting a preset
