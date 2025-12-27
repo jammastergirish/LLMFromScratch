@@ -51,19 +51,39 @@ class TransformerSampler:
         tokens_tensor = torch.tensor(
             [tokens], dtype=torch.long, device=self.device)
 
-        # Generate tokens
-        for _ in range(max_new_tokens):
-            # Truncate sequence if it exceeds context length (keep last n_ctx tokens)
-            if tokens_tensor.shape[1] > n_ctx:
-                tokens_tensor = tokens_tensor[:, -n_ctx:]
+        # Initialize KV cache
+        kv_cache = None
+        start_pos = 0
 
-            # Get model predictions
-            # logits: [1, seq_len, vocab_size]
+        # Process prompt (first forward pass)
+        prompt_len = tokens_tensor.shape[1]
+        if prompt_len > n_ctx:
+            tokens_tensor = tokens_tensor[:, -n_ctx:]
+            prompt_len = n_ctx
+
+        # Get model predictions for prompt
+        try:
+            result = self.model(tokens_tensor, cache=None, start_pos=0)
+            if isinstance(result, tuple):
+                logits, kv_cache = result
+                use_cache = True
+            else:
+                # Backward compatibility: model doesn't support cache
+                logits = result
+                kv_cache = None
+                use_cache = False
+        except TypeError:
+            # Backward compatibility: model doesn't support cache
             logits = self.model(tokens_tensor)
-            # Get logits for last position only
-            # logits: [vocab_size] - logits for last token position
-            logits = logits[0, -1, :] / temperature
+            kv_cache = None
+            use_cache = False
 
+        # Get logits for last position of prompt
+        logits = logits[0, -1, :] / temperature
+        start_pos = prompt_len
+
+        # Generate new tokens
+        for _ in range(max_new_tokens):
             # Apply top_k filtering
             if top_k is not None:
                 # indices_to_remove: [vocab_size] - boolean mask
@@ -105,6 +125,44 @@ class TransformerSampler:
             # tokens_tensor: [1, seq_len] -> [1, seq_len + 1]
             tokens_tensor = torch.cat(
                 [tokens_tensor, next_token.unsqueeze(0)], dim=1)
+
+            # Check if we need to truncate (shouldn't happen often with cache)
+            if tokens_tensor.shape[1] > n_ctx:
+                tokens_tensor = tokens_tensor[:, -n_ctx:]
+                # Reset cache if we truncate (for simplicity, could optimize this)
+                kv_cache = None
+                use_cache = False
+                start_pos = 0
+
+            # Process only the new token with cache
+            if use_cache and kv_cache is not None:
+                # Only process the new token: [1, 1]
+                new_token_tensor = next_token.unsqueeze(0)  # [1, 1]
+                try:
+                    result = self.model(new_token_tensor, cache=kv_cache, start_pos=start_pos)
+                    if isinstance(result, tuple):
+                        logits, kv_cache = result
+                    else:
+                        logits = result
+                        kv_cache = None
+                        use_cache = False
+                except TypeError:
+                    logits = self.model(new_token_tensor)
+                    kv_cache = None
+                    use_cache = False
+            else:
+                # Fallback: process full sequence (no cache)
+                logits = self.model(tokens_tensor)
+                if isinstance(logits, tuple):
+                    logits, kv_cache = logits
+                    use_cache = True
+            
+            # Get logits for last position only
+            # logits: [vocab_size] - logits for last token position
+            logits = logits[0, -1, :] / temperature
+            
+            # Update start_pos for next iteration
+            start_pos += 1
 
         # Decode and return
         # generated_tokens: [total_seq_len] - list of all token IDs

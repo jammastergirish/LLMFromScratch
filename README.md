@@ -28,6 +28,7 @@ By exploring the interface and codebase, you'll gain a deep understanding of:
 - **Fine-Tuning Process**: How to fine-tune a pre-trained model on prompt/response pairs using supervised fine-tuning (SFT)
 - **Loss Masking**: How to compute loss only on response tokens (not prompt tokens) during fine-tuning
 - **Text Generation**: Autoregressive generation and sampling strategies (temperature, top-k, top-p)
+- **KV Caching**: Efficient inference optimization that speeds up text generation by caching key-value tensors
 - **Implementation Details**: Multiple implementation approaches (with/without einops, manual vs PyTorch built-ins) to understand what's happening under the hood
 
 The codebase includes both educational implementations (showing the math and operations explicitly) and optimized versions, so you can see how concepts translate to actual code.
@@ -451,13 +452,14 @@ Both checkpoints are visible in the inference page, clearly labeled:
 
 #### Autoregressive Generation
 
+**Basic Approach (without KV cache)**:
 ```python
 # Start with prompt
 tokens = tokenizer.encode(prompt)  # [seq_len]
 
 # Generate tokens one by one
 for _ in range(max_new_tokens):
-    # Get model predictions
+    # Get model predictions (recomputes everything each time)
     logits = model(tokens)  # [1, seq_len, vocab_size]
     
     # Get logits for last position
@@ -469,6 +471,39 @@ for _ in range(max_new_tokens):
     # Append to sequence
     tokens.append(next_token)
 ```
+
+**Optimized Approach (with KV cache)**:
+```python
+# Start with prompt
+tokens = tokenizer.encode(prompt)  # [seq_len]
+tokens_tensor = torch.tensor([tokens], device=device)
+
+# Process prompt and initialize KV cache
+logits, kv_cache = model(tokens_tensor, cache=None, start_pos=0)
+next_token_logits = logits[0, -1, :] / temperature
+start_pos = tokens_tensor.shape[1]
+
+# Generate tokens one by one
+for _ in range(max_new_tokens):
+    # Sample next token
+    next_token = sample(next_token_logits)
+    
+    # Append to sequence
+    tokens_tensor = torch.cat([tokens_tensor, next_token.unsqueeze(0)], dim=1)
+    
+    # Process only the new token using KV cache
+    # This is much faster - only computes Q, K, V for the new token
+    new_token_tensor = next_token.unsqueeze(0)  # [1, 1]
+    logits, kv_cache = model(new_token_tensor, cache=kv_cache, start_pos=start_pos)
+    next_token_logits = logits[0, -1, :] / temperature
+    start_pos += 1
+```
+
+**Why KV Cache?**
+- **Without cache**: Each generation step recomputes Q, K, V for all previous tokens (O(n²) complexity per step)
+- **With cache**: Each generation step only computes Q, K, V for the new token, reusing cached K, V from previous tokens (O(n) complexity per step)
+- **Speedup**: Dramatically faster for long sequences - can be 10-100x faster depending on sequence length
+- **Memory tradeoff**: Uses more memory to store cached K, V tensors, but the speedup is usually worth it
 
 #### Sampling Strategies
 
@@ -914,6 +949,41 @@ Final: [batch, seq, d_model]  (after projection)
 - Head 2 might learn long-range dependencies
 - Head 3 might learn local patterns
 - Combining them gives richer representations
+
+#### KV Caching for Efficient Inference
+
+**The Problem**: During autoregressive generation, we generate tokens one at a time. Without caching, each step recomputes Q, K, V for all previous tokens, which is wasteful since K and V for previous tokens don't change.
+
+**The Solution**: Cache K and V tensors from previous tokens, and only compute Q, K, V for the new token.
+
+**How it works**:
+```python
+# First forward pass (processing prompt)
+# tokens: [batch, prompt_len]
+logits, kv_cache = model(tokens, cache=None, start_pos=0)
+# kv_cache: List of (K_cache, V_cache) tuples, one per layer
+# K_cache, V_cache: [batch, prompt_len, n_heads, d_head]
+
+# Subsequent forward passes (generating new tokens)
+# new_token: [batch, 1] - only the new token
+logits, kv_cache = model(new_token, cache=kv_cache, start_pos=prompt_len)
+# K, V are concatenated: [cached_K, new_K] and [cached_V, new_V]
+# Only new_K and new_V are computed, cached ones are reused
+```
+
+**Implementation Details**:
+1. **Attention Layer**: Accepts optional `cache` parameter containing cached K, V from previous tokens
+2. **Concatenation**: New K, V are concatenated with cached K, V along sequence dimension
+3. **RoPE Handling**: Cached K already has RoPE applied, so only new K gets rotated
+4. **ALiBi Handling**: Bias matrix is computed for full sequence length (cached + new tokens)
+5. **Cache Update**: Returns updated cache containing K, V for all tokens (cached + new)
+
+**Benefits**:
+- **Speed**: 10-100x faster for long sequences
+- **Efficiency**: Only computes Q, K, V for new tokens (O(n) instead of O(n²) per step)
+- **Memory**: Trades memory for speed (stores cached K, V tensors)
+
+**Backward Compatibility**: When `cache=None`, the model works exactly as before (used during training).
 
 ---
 

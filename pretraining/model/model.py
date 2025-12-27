@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
+from typing import Optional, Union
 from config import Architecture, PositionalEncoding
 from pretraining.embeddings.embed import EmbedWithoutTorch, EmbedWithTorch, UnembedWithoutTorch, UnembedWithTorch
 from pretraining.positional_embeddings.positional_embedding import PosEmbedWithEinops, PosEmbedWithoutEinops
@@ -53,8 +54,11 @@ class TransformerModelWithEinops(nn.Module):
         self.unembed = UnembedWithoutTorch(cfg)
 
     def forward(
-        self, tokens: Int[Tensor, "batch position"]
-    ) -> Float[Tensor, "batch position d_vocab"]:
+        self, 
+        tokens: Int[Tensor, "batch position"],
+        cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]]] = None,
+        start_pos: int = 0
+    ) -> tuple[Float[Tensor, "batch position d_vocab"], Optional[list[tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]]]]:
         # tokens: [batch, position]
 
         # Token embeddings
@@ -69,8 +73,11 @@ class TransformerModelWithEinops(nn.Module):
 
         # Transformer blocks
         # Each block: [batch, position, d_model] -> [batch, position, d_model]
-        for block in self.blocks:
-            residual = block(residual)
+        new_cache_list = []
+        for i, block in enumerate(self.blocks):
+            block_cache = cache[i] if cache is not None else None
+            residual, new_cache = block(residual, cache=block_cache, start_pos=start_pos)
+            new_cache_list.append(new_cache)
 
         # Final layer norm
         # residual: [batch, position, d_model]
@@ -81,7 +88,11 @@ class TransformerModelWithEinops(nn.Module):
         # logits: [batch, position, d_vocab]
         logits = self.unembed(residual)
 
-        return logits
+        # Return format: if cache was provided, return tuple; otherwise just logits (backward compatibility)
+        if cache is not None:
+            return logits, new_cache_list
+        else:
+            return logits
 
 
 class TransformerModelWithoutEinops(nn.Module):
@@ -127,8 +138,11 @@ class TransformerModelWithoutEinops(nn.Module):
         self.unembed = UnembedWithTorch(cfg)
 
     def forward(
-        self, tokens: Int[Tensor, "batch position"]
-    ) -> Float[Tensor, "batch position d_vocab"]:
+        self, 
+        tokens: Int[Tensor, "batch position"],
+        cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]]] = None,
+        start_pos: int = 0
+    ) -> tuple[Float[Tensor, "batch position d_vocab"], Optional[list[tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]]]]:
         # tokens: [batch, position]
 
         # Token embeddings
@@ -143,8 +157,11 @@ class TransformerModelWithoutEinops(nn.Module):
 
         # Transformer blocks
         # Each block: [batch, position, d_model] -> [batch, position, d_model]
-        for block in self.blocks:
-            residual = block(residual)
+        new_cache_list = []
+        for i, block in enumerate(self.blocks):
+            block_cache = cache[i] if cache is not None else None
+            residual, new_cache = block(residual, cache=block_cache, start_pos=start_pos)
+            new_cache_list.append(new_cache)
 
         # Final layer norm
         # residual: [batch, position, d_model]
@@ -155,7 +172,11 @@ class TransformerModelWithoutEinops(nn.Module):
         # logits: [batch, position, d_vocab]
         logits = self.unembed(residual)
 
-        return logits
+        # Return format: if cache was provided, return tuple; otherwise just logits (backward compatibility)
+        if cache is not None:
+            return logits, new_cache_list
+        else:
+            return logits
 
 
 # Backward compatibility aliases

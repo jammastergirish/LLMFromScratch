@@ -1398,7 +1398,13 @@ def organize_checkpoints_by_run(checkpoints: List[Dict]) -> List[Tuple[str, List
         timestamp = ckpt.get("timestamp", "")
         runs[timestamp].append(ckpt)
 
-    sorted_runs = sorted(runs.items(), key=lambda x: x[0], reverse=True)
+    # Sort runs by the latest checkpoint's creation time in each run (latest first)
+    def get_latest_time(run_checkpoints):
+        # Get the maximum creation time from all checkpoints in this run
+        times = [ckpt.get("ctime", 0) for ckpt in run_checkpoints]
+        return max(times) if times else 0
+
+    sorted_runs = sorted(runs.items(), key=lambda x: get_latest_time(x[1]), reverse=True)
     return sorted_runs
 
 
