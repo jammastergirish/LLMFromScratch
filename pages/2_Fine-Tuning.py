@@ -522,30 +522,29 @@ with st.container():
                                   disabled=not st.session_state.training_active)
 
     # Configuration summary before starting
-    if start_finetuning:
-        with st.expander("📋 Configuration Summary", expanded=True):
-            config_summary = {
-                "Checkpoint": selected_checkpoint["path"] if selected_checkpoint else "None",
-                "Method": "LoRA" if use_lora else "Full Parameter",
-                "Hyperparameters": {
-                    "batch_size": batch_size,
-                    "learning_rate": learning_rate,
-                    "weight_decay": weight_decay,
-                    "epochs": epochs,
-                    "max_steps_per_epoch": max_steps_per_epoch,
-                    "max_length": max_length,
-                    "eval_interval": eval_interval,
-                    "save_interval": save_interval
-                }
+    with st.expander("📋 Configuration Summary", expanded=True):
+        config_summary = {
+            "Checkpoint": selected_checkpoint["path"] if selected_checkpoint else "None",
+            "Method": "LoRA" if use_lora else "Full Parameter",
+            "Hyperparameters": {
+                "batch_size": batch_size,
+                "learning_rate": learning_rate,
+                "weight_decay": weight_decay,
+                "epochs": epochs,
+                "max_steps_per_epoch": max_steps_per_epoch,
+                "max_length": max_length,
+                "eval_interval": eval_interval,
+                "save_interval": save_interval
             }
-            if use_lora:
-                config_summary["LoRA"] = {
-                    "rank": lora_rank,
-                    "alpha": lora_alpha,
-                    "dropout": lora_dropout,
-                    "target_modules": lora_target_modules
-                }
-            st.json(config_summary)
+        }
+        if use_lora:
+            config_summary["LoRA"] = {
+                "rank": lora_rank,
+                "alpha": lora_alpha,
+                "dropout": lora_dropout,
+                "target_modules": lora_target_modules
+            }
+        st.json(config_summary)
     st.divider()
 
 if stop_training and st.session_state.training_active:

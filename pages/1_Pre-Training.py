@@ -289,22 +289,21 @@ with st.container():
             disabled=not st.session_state.training_active)
 
     # Configuration summary before starting
-    if start_training:
-        with st.expander("📋 Configuration Summary", expanded=True):
-            st.json({
-                "Model": model_config,
-                "Hyperparameters": {
-                    "batch_size": batch_size,
-                    "learning_rate": learning_rate,
-                    "weight_decay": weight_decay,
-                    "epochs": epochs,
-                    "max_steps_per_epoch": max_steps_per_epoch,
-                    "eval_interval": eval_interval,
-                    "save_interval": save_interval
-                },
-                "Tokenizer": tokenizer_type,
-                "Use Einops": use_einops
-            })
+    with st.expander("📋 Configuration Summary", expanded=True):
+        st.json({
+            "Model": model_config,
+            "Hyperparameters": {
+                "batch_size": batch_size,
+                "learning_rate": learning_rate,
+                "weight_decay": weight_decay,
+                "epochs": epochs,
+                "max_steps_per_epoch": max_steps_per_epoch,
+                "eval_interval": eval_interval,
+                "save_interval": save_interval
+            },
+            "Tokenizer": tokenizer_type,
+            "Use Einops": use_einops
+        })
     st.divider()
 
 if stop_training and st.session_state.training_active:
