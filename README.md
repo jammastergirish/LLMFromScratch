@@ -6,10 +6,10 @@ This repository contains a complete, educational implementation of a transformer
 
 Users can:
 
-- **Pre-train an LLM from scratch** using a simple, intuitive interface, with a diagram that visualizes your specific configuration.
+- **Pre-train an LLM from scratch** using a simple, intuitive interface, with a diagram that visualizes their specific configuration.
 - **Fine-tune a pre-trained model** on prompt/response pairs using supervised fine-tuning (SFT), with support for both full-parameter and parameter-efficient fine-tuning via LoRA.
 - **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. The code shown dynamically adapts to your configuration choices.
-- **Work through the equations** to understand the math behind the code, with equations dynamically displayed based on your configuration.
+- **Work through the equations** to understand the math behind the code, with equations dynamically displayed based on the user's configuration.
 
 I built this as I wanted to properly understand LLMs. A great way to learn is to write code yourself; an even better way to learn is to write code in a general, modular manner that's clean enough for others to read.
 
