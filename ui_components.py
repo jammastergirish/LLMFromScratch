@@ -17,10 +17,10 @@ import streamlit as st
 
 def format_elapsed_time(seconds: float) -> str:
     """Format elapsed time in a human-readable format.
-    
+
     Args:
         seconds: Elapsed time in seconds
-        
+
     Returns:
         Formatted string (e.g., "45.2s", "5m 30s", "2h 15m 30s")
     """
@@ -39,7 +39,7 @@ def format_elapsed_time(seconds: float) -> str:
 
 def get_elapsed_time() -> float:
     """Get current elapsed training time from session state.
-    
+
     Returns:
         Elapsed time in seconds, or 0.0 if training hasn't started
     """
@@ -50,15 +50,15 @@ def get_elapsed_time() -> float:
 
 def get_total_training_time() -> float:
     """Get total training time from session state.
-    
+
     Uses training_end_time if available, otherwise calculates from current time.
-    
+
     Returns:
         Total time in seconds, or 0.0 if training hasn't started
     """
     if "training_start_time" not in st.session_state:
         return 0.0
-    
+
     if "training_end_time" in st.session_state:
         return st.session_state.training_end_time - st.session_state.training_start_time
     else:
@@ -74,7 +74,7 @@ def render_training_metrics(
     max_iters: int
 ) -> None:
     """Render training metrics with Timing first, then Performance.
-    
+
     Args:
         current_iter: Current iteration number
         current_loss: Current loss value
@@ -84,7 +84,7 @@ def render_training_metrics(
         max_iters: Maximum number of iterations (can be int or string like '?')
     """
     elapsed_time = get_elapsed_time()
-    
+
     # Timing metrics first
     st.markdown("#### ⏱️ Timing")
     col1, col2, col3 = st.columns(3)
@@ -96,11 +96,12 @@ def render_training_metrics(
         if elapsed_time > 0 and current_iter > 0 and isinstance(max_iters, int):
             iter_per_sec = current_iter / elapsed_time
             eta_seconds = (max_iters - current_iter) / iter_per_sec
-            eta_str = format_elapsed_time(eta_seconds) if eta_seconds > 0 else "Calculating..."
+            eta_str = format_elapsed_time(
+                eta_seconds) if eta_seconds > 0 else "Calculating..."
             st.metric("Est. Time Remaining", eta_str)
         else:
             st.metric("Est. Time Remaining", "Calculating...")
-    
+
     # Performance metrics below
     st.markdown("#### 📈 Performance")
     col1, col2, col3 = st.columns(3)
@@ -124,16 +125,16 @@ def render_training_metrics(
 
 def render_all_losses_graph(all_losses_data: Dict, training_type: str = "Training") -> None:
     """Render all losses graph with enhanced styling.
-    
+
     Args:
         all_losses_data: Dictionary with 'iterations', 'current_losses', 'running_losses'
         training_type: Type of training ("Training" or "Fine-Tuning") for title customization
     """
     import pandas as pd
     import plotly.graph_objects as go
-    
+
     st.subheader("📈 Training Loss")
-    
+
     # Add summary stats above graph
     if all_losses_data["current_losses"]:
         latest_loss = all_losses_data["current_losses"][-1]
@@ -145,7 +146,7 @@ def render_all_losses_graph(all_losses_data: Dict, training_type: str = "Trainin
             loss_trend = "↓ Improving" if recent_avg < earlier_avg else "→ Stable"
         else:
             loss_trend = "→ Initializing"
-        
+
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Latest Loss", f"{latest_loss:.4f}")
@@ -153,7 +154,7 @@ def render_all_losses_graph(all_losses_data: Dict, training_type: str = "Trainin
             st.metric("Best Loss", f"{min_loss:.4f}")
         with col3:
             st.metric("Trend", loss_trend)
-    
+
     df_all = pd.DataFrame({
         "Iteration": all_losses_data["iterations"],
         "Current Loss": all_losses_data["current_losses"],
@@ -171,36 +172,37 @@ def render_all_losses_graph(all_losses_data: Dict, training_type: str = "Trainin
         mode="lines", name="Running Avg Loss",
         line={"color": "purple", "width": 2}
     ))
-    
+
     title = f"{training_type} Losses (updated every 10 iterations)"
     fig_all.update_layout(
         title=title,
         xaxis_title="Iteration", yaxis_title="Loss",
         hovermode="x unified", height=400,
         yaxis={"range": [0, None]},
-        template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly"
+        template="plotly_dark" if st.get_option(
+            "theme.base") == "dark" else "plotly"
     )
-    st.plotly_chart(fig_all, use_container_width=True)
+    st.plotly_chart(fig_all, width='stretch')
 
 
 def render_eval_losses_graph(loss_data: Dict) -> None:
     """Render evaluation losses graph with enhanced styling.
-    
+
     Args:
         loss_data: Dictionary with 'iterations', 'train_losses', 'val_losses'
     """
     import pandas as pd
     import plotly.graph_objects as go
-    
+
     st.subheader("📊 Evaluation Losses (Train/Val)")
-    
+
     # Add summary stats
     if loss_data["train_losses"] and loss_data["val_losses"]:
         latest_train = loss_data["train_losses"][-1]
         latest_val = loss_data["val_losses"][-1]
         gap = latest_val - latest_train
         gap_status = "✓ Good" if gap < 0.5 else "⚠️ Large gap" if gap < 1.0 else "❌ Overfitting"
-        
+
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Latest Train Loss", f"{latest_train:.4f}")
@@ -208,7 +210,7 @@ def render_eval_losses_graph(loss_data: Dict) -> None:
             st.metric("Latest Val Loss", f"{latest_val:.4f}")
         with col3:
             st.metric("Train-Val Gap", f"{gap:.4f}", delta=gap_status)
-    
+
     df = pd.DataFrame({
         "Iteration": loss_data["iterations"],
         "Train Loss": loss_data["train_losses"],
@@ -230,20 +232,21 @@ def render_eval_losses_graph(loss_data: Dict) -> None:
         title="Training and Validation Loss (evaluated every 500 iterations)",
         xaxis_title="Iteration", yaxis_title="Loss",
         hovermode="x unified", height=400,
-        template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly"
+        template="plotly_dark" if st.get_option(
+            "theme.base") == "dark" else "plotly"
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def render_completed_training_ui(training_type: str = "Training") -> None:
     """Render UI for completed training.
-    
+
     Args:
         training_type: Type of training ("Training" or "Fine-Tuning") for text customization
     """
     import pandas as pd
     import plotly.graph_objects as go
-    
+
     if st.session_state.loss_data["iterations"]:
         # Calculate total elapsed time
         total_time = get_total_training_time()
@@ -258,14 +261,14 @@ def render_completed_training_ui(training_type: str = "Training") -> None:
                 ⏱️ {time_text}: <strong>{format_elapsed_time(total_time)}</strong>
             </div>
             """, unsafe_allow_html=True)
-        
+
         # Final metrics summary
         if st.session_state.loss_data["train_losses"] and st.session_state.loss_data["val_losses"]:
             final_train = st.session_state.loss_data["train_losses"][-1]
             final_val = st.session_state.loss_data["val_losses"][-1]
             best_train = min(st.session_state.loss_data["train_losses"])
             best_val = min(st.session_state.loss_data["val_losses"])
-            
+
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Final Train Loss", f"{final_train:.4f}")
@@ -275,7 +278,7 @@ def render_completed_training_ui(training_type: str = "Training") -> None:
                 st.metric("Best Train Loss", f"{best_train:.4f}")
             with col4:
                 st.metric("Best Val Loss", f"{best_val:.4f}")
-        
+
         df = pd.DataFrame({
             "Iteration": st.session_state.loss_data["iterations"],
             "Train Loss": st.session_state.loss_data["train_losses"],
@@ -297,9 +300,195 @@ def render_completed_training_ui(training_type: str = "Training") -> None:
             title="Training and Validation Loss",
             xaxis_title="Iteration", yaxis_title="Loss",
             hovermode="x unified", height=400,
-            template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly"
+            template="plotly_dark" if st.get_option(
+                "theme.base") == "dark" else "plotly"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
+
+
+def handle_training_completion(training_flag_active: bool, training_type: str = "Training") -> None:
+    """Handle training completion logic.
+
+    Args:
+        training_flag_active: Whether training is still active
+        training_type: Type of training ("Training" or "Fine-Tuning") for text customization
+    """
+    import time
+
+    # Record end time
+    if "training_start_time" in st.session_state and "training_end_time" not in st.session_state:
+        st.session_state.training_end_time = time.time()
+
+    total_time = get_total_training_time()
+
+    # Determine completion messages based on training type
+    if training_type == "Fine-Tuning":
+        complete_msg = "Fine-tuning complete!"
+        completed_msg = "Fine-tuning completed!"
+        error_msg = "Error during fine-tuning"
+        stopped_msg = "Fine-tuning stopped by user"
+        error_detail = "Fine-tuning error occurred. Check logs for details."
+    else:
+        complete_msg = "Training complete!"
+        completed_msg = "Training completed!"
+        error_msg = "Error during training"
+        stopped_msg = "Training stopped by user"
+        error_detail = "Training error occurred. Check logs for details."
+
+    if st.session_state.shared_training_logs:
+        last_logs = list(st.session_state.shared_training_logs)[-3:]
+        last_logs_str = " ".join(last_logs)
+        if complete_msg in last_logs_str or "Completed all" in last_logs_str:
+            st.session_state.training_active = False
+            st.success(
+                f"✅ {completed_msg} Total time: {format_elapsed_time(total_time)}")
+        elif error_msg in last_logs_str:
+            st.session_state.training_active = False
+            st.error(f"❌ {error_detail}")
+        elif stopped_msg in last_logs_str:
+            st.session_state.training_active = False
+            st.info(
+                f"⏹️ {stopped_msg}. Elapsed time: {format_elapsed_time(total_time)}")
+        elif not training_flag_active:
+            st.session_state.training_active = False
+            st.success(
+                f"✅ {completed_msg} Total time: {format_elapsed_time(total_time)}")
+    elif not training_flag_active:
+        st.session_state.training_active = False
+        st.success(
+            f"✅ {completed_msg} Total time: {format_elapsed_time(total_time)}")
+
+
+def render_active_training_ui(training_type: str = "Training") -> None:
+    """Render UI for active training with enhanced visuals.
+
+    Args:
+        training_type: Type of training ("Training" or "Fine-Tuning") for text customization
+    """
+    import time
+
+    if "progress_data" in st.session_state:
+        progress_data = st.session_state.progress_data
+        with st.session_state.training_lock:
+            current_iter = progress_data.get("iter", 0)
+            current_loss = progress_data.get("loss", 0.0)
+            running_loss = progress_data.get("running_loss", 0.0)
+            val_loss = progress_data.get("val_loss")
+            progress = progress_data.get("progress", 0.0)
+
+        # Enhanced header with status indicator
+        status_col1, status_col2 = st.columns([3, 1])
+        with status_col1:
+            progress_header = f"📊 {training_type} Progress"
+            st.header(progress_header)
+        with status_col2:
+            st.markdown("""
+            <div style='background-color: #28a745; color: white; padding: 8px 16px; 
+                        border-radius: 20px; text-align: center; font-weight: bold; margin-top: 20px;'>
+                🟢 Training...
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Progress bar with better styling
+        max_iters = st.session_state.trainer.max_iters if st.session_state.trainer else '?'
+        st.progress(
+            progress, text=f"Iteration {current_iter:,} / {max_iters:,}")
+
+        # Enhanced metrics - Timing first, then Performance below
+        render_training_metrics(
+            current_iter=current_iter,
+            current_loss=current_loss,
+            running_loss=running_loss,
+            val_loss=val_loss,
+            progress=progress,
+            max_iters=max_iters
+        )
+
+    # Get loss data (thread-safe)
+    with st.session_state.training_lock:
+        loss_data = {
+            "iterations": list(st.session_state.shared_loss_data["iterations"]),
+            "train_losses": list(st.session_state.shared_loss_data["train_losses"]),
+            "val_losses": list(st.session_state.shared_loss_data["val_losses"])
+        }
+        training_logs = list(st.session_state.shared_training_logs)
+        all_losses_data = None
+        if "progress_data" in st.session_state and "all_losses" in st.session_state.progress_data:
+            all_losses_data = {
+                "iterations": list(st.session_state.progress_data["all_losses"]["iterations"]),
+                "current_losses": list(st.session_state.progress_data["all_losses"]["current_losses"]),
+                "running_losses": list(st.session_state.progress_data["all_losses"]["running_losses"])
+            }
+
+    st.session_state.loss_data = loss_data
+    st.session_state.training_logs = training_logs
+    if all_losses_data:
+        st.session_state.all_losses_data = all_losses_data
+
+    # Render graphs
+    if all_losses_data and len(all_losses_data["iterations"]) > 0:
+        render_all_losses_graph(all_losses_data, training_type=training_type)
+
+    if loss_data["iterations"]:
+        render_eval_losses_graph(loss_data)
+        caption_text = f"💡 Page auto-refreshes every 2 seconds while {training_type.lower()}."
+        st.caption(caption_text)
+        if st.session_state.training_active:
+            time.sleep(2)
+            st.rerun()
+    else:
+        if st.session_state.training_active:
+            st.info("⏳ Waiting for first evaluation (at the 500th iteration).")
+            time.sleep(2)
+            st.rerun()
+
+    # Training logs
+    if training_logs:
+        logs_header = f"📝 {training_type} Logs (Console Output)"
+        st.header(logs_header)
+
+        # Check if there's an error in the logs
+        if training_type == "Fine-Tuning":
+            has_error = any(
+                "Error during fine-tuning" in log or "ERROR DETECTED" in log for log in training_logs)
+        else:
+            has_error = any(
+                "Error" in log or "ERROR" in log for log in training_logs)
+
+        with st.expander("View All Logs", expanded=has_error):
+            log_text = "\n".join(training_logs)
+            st.text_area("Logs", value=log_text, height=400,
+                         label_visibility="collapsed", disabled=True)
+        st.caption(f"Showing {len(training_logs)} log entries")
+
+        # If there's an error, show it prominently
+        if has_error:
+            st.error(
+                "⚠️ **Error detected in logs above. Please scroll up to see the full error message and traceback.**")
+
+
+def display_training_status(training_type: str = "Training") -> None:
+    """Display training status and visualizations.
+
+    Args:
+        training_type: Type of training ("Training" or "Fine-Tuning") for text customization
+    """
+    # Check training status
+    if st.session_state.training_thread is not None:
+        thread_alive = st.session_state.training_thread.is_alive()
+        training_flag_active = True
+        if "training_active_flag" in st.session_state:
+            with st.session_state.training_lock:
+                training_flag_active = st.session_state.training_active_flag[0]
+
+        if not thread_alive and st.session_state.training_active:
+            handle_training_completion(
+                training_flag_active, training_type=training_type)
+
+    if st.session_state.training_active:
+        render_active_training_ui(training_type=training_type)
+    else:
+        render_completed_training_ui(training_type=training_type)
 
 
 # ============================================================================
@@ -413,19 +602,19 @@ def _render_preset_buttons(config: Dict) -> None:
     col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
 
     with col1:
-        if st.button("🚀 GPT-2", use_container_width=True):
+        if st.button("🚀 GPT-2", width='stretch'):
             apply_architecture_preset("GPT", config)
             apply_model_size_preset(config.get("model_size", "small"), config)
             st.rerun()
 
     with col2:
-        if st.button("🦙 LLaMA", use_container_width=True):
+        if st.button("🦙 LLaMA", width='stretch'):
             apply_architecture_preset("LLAMA", config)
             apply_model_size_preset(config.get("model_size", "small"), config)
             st.rerun()
 
     with col3:
-        if st.button("🔬 OLMo", use_container_width=True):
+        if st.button("🔬 OLMo", width='stretch'):
             apply_architecture_preset("OLMO", config)
             apply_model_size_preset(config.get("model_size", "small"), config)
             st.rerun()
@@ -513,36 +702,36 @@ def _render_model_size_selector(config: Dict) -> None:
     """Render model size selector as buttons."""
     st.subheader("Model Size Preset")
     current_size = config.get("model_size", "small")
-    
+
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
         button_type = "primary" if current_size == "small" else "secondary"
-        if st.button("🔹 Small", use_container_width=True, type=button_type,
+        if st.button("🔹 Small", width='stretch', type=button_type,
                      help="Small model: 256 dim, 4 heads, 4 layers"):
             if current_size != "small":
                 config["model_size"] = "small"
                 apply_model_size_preset("small", config)
                 st.rerun()
-    
+
     with col2:
         button_type = "primary" if current_size == "medium" else "secondary"
-        if st.button("🔸 Medium", use_container_width=True, type=button_type,
+        if st.button("🔸 Medium", width='stretch', type=button_type,
                      help="Medium model: 512 dim, 8 heads, 6 layers"):
             if current_size != "medium":
                 config["model_size"] = "medium"
                 apply_model_size_preset("medium", config)
                 st.rerun()
-    
+
     with col3:
         button_type = "primary" if current_size == "full" else "secondary"
-        if st.button("🔶 Full", use_container_width=True, type=button_type,
+        if st.button("🔶 Full", width='stretch', type=button_type,
                      help="Full model: 768 dim, 12 heads, 12 layers"):
             if current_size != "full":
                 config["model_size"] = "full"
                 apply_model_size_preset("full", config)
                 st.rerun()
-    
+
     config["model_size"] = current_size
 
 
@@ -1719,7 +1908,8 @@ def organize_checkpoints_by_run(checkpoints: List[Dict]) -> List[Tuple[str, List
         times = [ckpt.get("ctime", 0) for ckpt in run_checkpoints]
         return max(times) if times else 0
 
-    sorted_runs = sorted(runs.items(), key=lambda x: get_latest_time(x[1]), reverse=True)
+    sorted_runs = sorted(
+        runs.items(), key=lambda x: get_latest_time(x[1]), reverse=True)
     return sorted_runs
 
 

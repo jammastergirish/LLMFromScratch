@@ -22,7 +22,8 @@ from pretraining.training.training_ui import initialize_training_state
 from ui_components import (
     render_checkpoint_selector, render_finetuning_equations, render_finetuning_code_snippets,
     format_elapsed_time, get_total_training_time, render_training_metrics,
-    render_all_losses_graph, render_eval_losses_graph, render_completed_training_ui
+    render_all_losses_graph, render_eval_losses_graph, render_completed_training_ui,
+    render_active_training_ui, display_training_status
 )
 from config import PositionalEncoding
 
@@ -323,150 +324,6 @@ def _start_finetuning_workflow(
     st.rerun()
 
 
-def _render_active_training_ui():
-    """Render UI for active training with enhanced visuals."""
-    if "progress_data" in st.session_state:
-        progress_data = st.session_state.progress_data
-        with st.session_state.training_lock:
-            current_iter = progress_data.get("iter", 0)
-            current_loss = progress_data.get("loss", 0.0)
-            running_loss = progress_data.get("running_loss", 0.0)
-            val_loss = progress_data.get("val_loss")
-            progress = progress_data.get("progress", 0.0)
-
-        # Enhanced header with status indicator
-        status_col1, status_col2 = st.columns([3, 1])
-        with status_col1:
-            st.header("📊 Fine-Tuning Progress")
-        with status_col2:
-            st.markdown("""
-            <div style='background-color: #28a745; color: white; padding: 8px 16px; 
-                        border-radius: 20px; text-align: center; font-weight: bold; margin-top: 20px;'>
-                🟢 Training...
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Progress bar with better styling
-        max_iters = st.session_state.trainer.max_iters if st.session_state.trainer else '?'
-        st.progress(
-            progress, text=f"Iteration {current_iter:,} / {max_iters:,}")
-
-        # Enhanced metrics - Timing first, then Performance below
-        render_training_metrics(
-            current_iter=current_iter,
-            current_loss=current_loss,
-            running_loss=running_loss,
-            val_loss=val_loss,
-            progress=progress,
-            max_iters=max_iters
-        )
-
-    # Get loss data (thread-safe)
-    with st.session_state.training_lock:
-        loss_data = {
-            "iterations": list(st.session_state.shared_loss_data["iterations"]),
-            "train_losses": list(st.session_state.shared_loss_data["train_losses"]),
-            "val_losses": list(st.session_state.shared_loss_data["val_losses"])
-        }
-        training_logs = list(st.session_state.shared_training_logs)
-        all_losses_data = None
-        if "progress_data" in st.session_state and "all_losses" in st.session_state.progress_data:
-            all_losses_data = {
-                "iterations": list(st.session_state.progress_data["all_losses"]["iterations"]),
-                "current_losses": list(st.session_state.progress_data["all_losses"]["current_losses"]),
-                "running_losses": list(st.session_state.progress_data["all_losses"]["running_losses"])
-            }
-
-    st.session_state.loss_data = loss_data
-    st.session_state.training_logs = training_logs
-    if all_losses_data:
-        st.session_state.all_losses_data = all_losses_data
-
-    # Render graphs
-    if all_losses_data and len(all_losses_data["iterations"]) > 0:
-        render_all_losses_graph(all_losses_data, training_type="Fine-Tuning")
-
-    if loss_data["iterations"]:
-        render_eval_losses_graph(loss_data)
-        st.caption("💡 Page auto-refreshes every 2 seconds while fine-tuning.")
-        if st.session_state.training_active:
-            time.sleep(2)
-            st.rerun()
-    else:
-        if st.session_state.training_active:
-            st.info("⏳ Waiting for first evaluation (at the 500th iteration).")
-            time.sleep(2)
-            st.rerun()
-
-    # Training logs
-    if training_logs:
-        st.header("📝 Fine-Tuning Logs (Console Output)")
-        # Check if there's an error in the logs
-        has_error = any(
-            "Error during fine-tuning" in log or "ERROR DETECTED" in log for log in training_logs)
-        with st.expander("View All Logs", expanded=has_error):
-            log_text = "\n".join(training_logs)
-            st.text_area("Logs", value=log_text, height=400,
-                         label_visibility="collapsed", disabled=True)
-        st.caption(f"Showing {len(training_logs)} log entries")
-
-        # If there's an error, show it prominently
-        if has_error:
-            st.error(
-                "⚠️ **Error detected in logs above. Please scroll up to see the full error message and traceback.**")
-
-
-def _handle_training_completion(training_flag_active: bool):
-    """Handle training completion logic."""
-    # Record end time
-    if "training_start_time" in st.session_state and "training_end_time" not in st.session_state:
-        st.session_state.training_end_time = time.time()
-
-    total_time = get_total_training_time()
-
-    if st.session_state.shared_training_logs:
-        last_logs = list(st.session_state.shared_training_logs)[-3:]
-        last_logs_str = " ".join(last_logs)
-        if "Fine-tuning complete!" in last_logs_str or "Completed all" in last_logs_str:
-            st.session_state.training_active = False
-            st.success(
-                f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
-        elif "Error during fine-tuning" in last_logs_str:
-            st.session_state.training_active = False
-            st.error("❌ Fine-tuning error occurred. Check logs for details.")
-        elif "Fine-tuning stopped by user" in last_logs_str:
-            st.session_state.training_active = False
-            st.info(
-                f"⏹️ Fine-tuning stopped by user. Elapsed time: {format_elapsed_time(total_time)}")
-        elif not training_flag_active:
-            st.session_state.training_active = False
-            st.success(
-                f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
-    elif not training_flag_active:
-        st.session_state.training_active = False
-        st.success(
-            f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
-
-
-def _display_training_status():
-    """Display training status and visualizations."""
-    # Check training status
-    if st.session_state.training_thread is not None:
-        thread_alive = st.session_state.training_thread.is_alive()
-        training_flag_active = True
-        if "training_active_flag" in st.session_state:
-            with st.session_state.training_lock:
-                training_flag_active = st.session_state.training_active_flag[0]
-
-        if not thread_alive and st.session_state.training_active:
-            _handle_training_completion(training_flag_active)
-
-    if st.session_state.training_active:
-        _render_active_training_ui()
-    else:
-        render_completed_training_ui(training_type="Fine-Tuning")
-
-
 def _render_quick_stats(batch_size, lr, epochs, max_length, use_lora, lora_rank=None):
     """Render quick statistics about the fine-tuning configuration."""
     col1, col2, col3, col4 = st.columns(4)
@@ -571,7 +428,7 @@ with st.container():
                 "📄 Using default finetuning.csv file. Upload a different file to override.")
             # Preview default CSV
             df = pd.read_csv("finetuning.csv")
-            st.dataframe(df.head(), use_container_width=True)
+            st.dataframe(df.head(), width='stretch')
             st.caption(f"Total rows: {len(df)}")
         else:
             st.warning(
@@ -579,7 +436,7 @@ with st.container():
     else:
         # Preview uploaded CSV
         df = pd.read_csv(uploaded_csv)
-        st.dataframe(df.head(), use_container_width=True)
+        st.dataframe(df.head(), width='stretch')
         st.caption(f"Total rows: {len(df)}")
     st.divider()
 
@@ -657,10 +514,10 @@ with st.container():
     col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
 
     with col2:
-        start_finetuning = st.button("🚀 Start Fine-Tuning", type="primary", use_container_width=True,
+        start_finetuning = st.button("🚀 Start Fine-Tuning", type="primary", width='stretch',
                                      help="Begin fine-tuning with current configuration")
     with col3:
-        stop_training = st.button("⏹️ Stop Fine-Tuning", use_container_width=True,
+        stop_training = st.button("⏹️ Stop Fine-Tuning", width='stretch',
                                   help="Stop the current fine-tuning run",
                                   disabled=not st.session_state.training_active)
 
@@ -725,4 +582,4 @@ if start_finetuning:
         )
 
 # Display training status
-_display_training_status()
+display_training_status(training_type="Fine-Tuning")
