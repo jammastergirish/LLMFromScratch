@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 from jaxtyping import Float, Int
@@ -16,6 +18,10 @@ def _aggregate_aux_losses(aux_losses: list) -> Optional[Float[Tensor, ""]]:
     if aux_losses:
         return sum(aux_losses)
     return None
+
+
+# Type alias for forward method return type (using string to avoid parsing issues)
+ForwardReturnType: str = "Union[Float[Tensor, 'batch position d_vocab'], Tuple[Float[Tensor, 'batch position d_vocab'], Optional[Float[Tensor, \"\"]]], Tuple[Float[Tensor, 'batch position d_vocab'], Optional[list[tuple[Float[Tensor, \"batch new_cache_len n_heads d_head\"], Float[Tensor, \"batch new_cache_len n_heads d_head\"]]]], Tuple[Float[Tensor, 'batch position d_vocab'], Optional[list[tuple[Float[Tensor, \"batch new_cache_len n_heads d_head\"], Float[Tensor, \"batch new_cache_len n_heads d_head\"]]], Optional[Float[Tensor, \"\"]]]]"
 
 
 class TransformerModelWithEinops(nn.Module):
@@ -61,16 +67,12 @@ class TransformerModelWithEinops(nn.Module):
         self.unembed = UnembedWithoutTorch(cfg)
 
     def forward(
-        self, 
+        self,
         tokens: Int[Tensor, "batch position"],
-        cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]]] = None,
+        cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"],
+                                   Float[Tensor, "batch cache_len n_kv_heads d_head"]]]] = None,
         start_pos: int = 0
-    ) -> Union[
-        Float[Tensor, "batch position d_vocab"],
-        Tuple[Float[Tensor, "batch position d_vocab"], Optional[Float[Tensor, ""]]],
-        Tuple[Float[Tensor, "batch position d_vocab"], Optional[list[tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]]],
-        Tuple[Float[Tensor, "batch position d_vocab"], Optional[list[tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]], Optional[Float[Tensor, ""]]]
-    ]:
+    ) -> ForwardReturnType:
         # tokens: [batch, position]
 
         # Token embeddings
@@ -89,7 +91,8 @@ class TransformerModelWithEinops(nn.Module):
         aux_losses = []
         for i, block in enumerate(self.blocks):
             block_cache = cache[i] if cache is not None else None
-            residual, new_cache, aux_loss = block(residual, cache=block_cache, start_pos=start_pos)
+            residual, new_cache, aux_loss = block(
+                residual, cache=block_cache, start_pos=start_pos)
             new_cache_list.append(new_cache)
             if aux_loss is not None:
                 aux_losses.append(aux_loss)
@@ -165,16 +168,12 @@ class TransformerModelWithoutEinops(nn.Module):
         self.unembed = UnembedWithTorch(cfg)
 
     def forward(
-        self, 
+        self,
         tokens: Int[Tensor, "batch position"],
-        cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]]] = None,
+        cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"],
+                                   Float[Tensor, "batch cache_len n_kv_heads d_head"]]]] = None,
         start_pos: int = 0
-    ) -> Union[
-        Float[Tensor, "batch position d_vocab"],
-        Tuple[Float[Tensor, "batch position d_vocab"], Optional[Float[Tensor, ""]]],
-        Tuple[Float[Tensor, "batch position d_vocab"], Optional[list[tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]]],
-        Tuple[Float[Tensor, "batch position d_vocab"], Optional[list[tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]]], Optional[Float[Tensor, ""]]]
-    ]:
+    ) -> ForwardReturnType:
         # tokens: [batch, position]
 
         # Token embeddings
@@ -193,7 +192,8 @@ class TransformerModelWithoutEinops(nn.Module):
         aux_losses = []
         for i, block in enumerate(self.blocks):
             block_cache = cache[i] if cache is not None else None
-            residual, new_cache, aux_loss = block(residual, cache=block_cache, start_pos=start_pos)
+            residual, new_cache, aux_loss = block(
+                residual, cache=block_cache, start_pos=start_pos)
             new_cache_list.append(new_cache)
             if aux_loss is not None:
                 aux_losses.append(aux_loss)
@@ -229,4 +229,3 @@ class TransformerModelWithoutEinops(nn.Module):
 # Backward compatibility aliases
 GPTWithEinops = TransformerModelWithEinops
 GPTWithoutEinops = TransformerModelWithoutEinops
-

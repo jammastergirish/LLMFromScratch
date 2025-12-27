@@ -27,9 +27,9 @@ class TransformerBlockWithEinops(nn.Module):
     def forward(
         self, 
         residual: Float[Tensor, "batch posn d_model"],
-        cache: Optional[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]] = None,
+        cache: Optional[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"], Float[Tensor, "batch cache_len n_kv_heads d_head"]]] = None,
         start_pos: int = 0
-    ) -> Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]], Optional[Float[Tensor, ""]]]:
+    ) -> Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]], Optional[Float[Tensor, ""]]]:
         # residual: [batch, posn, d_model]
 
         # Pre-norm attention with residual connection
@@ -62,9 +62,9 @@ class TransformerBlockWithoutEinops(nn.Module):
     def forward(
         self, 
         residual: Float[Tensor, "batch posn d_model"],
-        cache: Optional[tuple[Float[Tensor, "batch cache_len n_heads d_head"], Float[Tensor, "batch cache_len n_heads d_head"]]] = None,
+        cache: Optional[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"], Float[Tensor, "batch cache_len n_kv_heads d_head"]]] = None,
         start_pos: int = 0
-    ) -> Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_heads d_head"], Float[Tensor, "batch new_cache_len n_heads d_head"]], Optional[Float[Tensor, ""]]]:
+    ) -> Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]], Optional[Float[Tensor, ""]]]:
         # residual: [batch, posn, d_model]
 
         # Pre-norm attention with residual connection

@@ -79,7 +79,7 @@ The app will open in your browser with the following pages:
    - **🦙 LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation
    - **🔬 OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation
    - **🔷 DeepSeek V2**: LLaMA-style with MoE (64 experts, top-6, 2 shared experts)
-   - **🦙 Llama MoE**: LLaMA-style with MoE (8 experts, top-2, Mixtral-style)
+   - **🎯 Mixtral**: LLaMA-style with MoE (8 experts, top-2 routing). Sparse MoE architecture matching Mixtral 8x7B design
 3. Configure model dimensions (or use size presets: small, medium, full)
 4. Optionally enable MoE (Mixture of Experts) and configure expert settings
 4. Set training hyperparameters (batch size, learning rate, epochs, etc.)
@@ -857,6 +857,37 @@ Softmax: [batch, n_heads, seq_len, seq_len]
 3. Softmax to get attention probabilities
 4. Weighted sum of values: `Attention(Q, K, V) = softmax(QK^T / √d_head) @ V`
 
+#### Attention Types: MHA, GQA, and MQA
+
+The codebase supports three attention variants:
+
+**1. Multi-Head Attention (MHA)** - Standard attention:
+- Each head has separate Q, K, V projections
+- `n_kv_heads = n_heads` (default)
+- Used in: GPT-2, original LLaMA
+- KV cache size: `[batch, seq_len, n_heads, d_head]`
+
+**2. Grouped Query Attention (GQA)** - Efficient attention:
+- Groups of Q heads share the same K/V heads
+- `n_kv_heads < n_heads` (e.g., 32 Q heads, 8 KV heads = 4:1 ratio)
+- Used in: LLaMA 2, Mistral, Mixtral
+- KV cache size: `[batch, seq_len, n_kv_heads, d_head]` (smaller!)
+- Benefits: ~75% smaller KV cache, faster inference, minimal quality loss
+
+**3. Multi-Query Attention (MQA)** - Most efficient:
+- All Q heads share a single K/V head
+- `n_kv_heads = 1`
+- Used in: PaLM, some optimized models
+- KV cache size: `[batch, seq_len, 1, d_head]` (much smaller!)
+- Benefits: Maximum memory efficiency, faster inference, slight quality trade-off
+
+**How GQA/MQA Works**:
+1. Compute Q with `n_heads` projections: `Q: [batch, seq, n_heads, d_head]`
+2. Compute K/V with `n_kv_heads` projections: `K, V: [batch, seq, n_kv_heads, d_head]`
+3. Broadcast K/V to match Q: repeat each KV head `n_heads / n_kv_heads` times
+4. Attention computation proceeds identically to MHA after broadcasting
+5. Cache stores original (non-broadcasted) K/V to save memory
+
 #### `AttentionWithEinops`
 
 **Step 1: Compute Q, K, V**
@@ -1078,6 +1109,29 @@ Up: [batch, posn, d_mlp]  # W_up @ x
 Hidden: [batch, posn, d_mlp]  # gate * up (element-wise)
 Project: [batch, posn, d_model]  # e.g., [32, 128, 256]
 ```
+
+#### Attention Types: MHA, GQA, and MQA
+
+**Multi-Head Attention (MHA)**:
+- Standard attention: each head has separate Q, K, V
+- KV cache: `[batch, seq_len, n_heads, d_head]`
+- Used in: GPT-2, original LLaMA
+
+**Grouped Query Attention (GQA)**:
+- Groups of Q heads share K/V heads (e.g., 32 Q heads, 8 KV heads)
+- KV cache: `[batch, seq_len, n_kv_heads, d_head]` (75% smaller for 4:1 ratio!)
+- Used in: LLaMA 2, Mistral, Mixtral
+- Benefits: Smaller KV cache, faster inference, minimal quality loss
+
+**Multi-Query Attention (MQA)**:
+- All Q heads share single K/V head
+- KV cache: `[batch, seq_len, 1, d_head]` (much smaller!)
+- Used in: PaLM, optimized models
+- Benefits: Maximum memory efficiency, faster inference
+
+**Implementation**: K/V are computed with `n_kv_heads` projections, then broadcast to match Q heads before attention computation. Cache stores original (non-broadcasted) K/V.
+
+---
 
 #### MoE Architecture (Mixture of Experts)
 

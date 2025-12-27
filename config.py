@@ -46,6 +46,7 @@ class ModelConfig:
     d_head: int = 64
     d_mlp: int = 3072
     n_heads: int = 12
+    n_kv_heads: int = None  # Number of KV heads for GQA/MQA (None = n_heads for MHA)
     n_layers: int = 12
 
     # Configurable model components (if None, will be set based on architecture)
@@ -96,6 +97,17 @@ class ModelConfig:
                 self.router_type = RouterType.TOP_K_WITH_SHARED
             else:
                 self.router_type = RouterType.TOP_K
+
+        # Set default n_kv_heads for GQA/MQA support
+        # If None, default to n_heads (MHA behavior - backward compatible)
+        if self.n_kv_heads is None:
+            self.n_kv_heads = self.n_heads
+        
+        # Validate n_kv_heads for GQA/MQA
+        if self.n_kv_heads > self.n_heads:
+            raise ValueError(f"n_kv_heads ({self.n_kv_heads}) cannot be greater than n_heads ({self.n_heads})")
+        if self.n_heads % self.n_kv_heads != 0:
+            raise ValueError(f"n_heads ({self.n_heads}) must be divisible by n_kv_heads ({self.n_kv_heads}) for GQA")
 
     @classmethod
     def gpt_small(cls):

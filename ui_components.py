@@ -571,8 +571,17 @@ def apply_deepseek_v2_preset(config: Dict) -> None:
     config["expert_capacity_factor"] = 1.25
 
 
-def apply_llama_moe_preset(config: Dict) -> None:
-    """Apply Llama MoE (Mixtral-style) preset."""
+def apply_mixtral_preset(config: Dict) -> None:
+    """Apply Mixtral 8x7B preset.
+
+    Mixtral uses a Sparse Mixture-of-Experts (MoE) architecture:
+    - 8 experts per MoE layer
+    - Top-2 routing (activates 2 experts per token)
+    - Based on LLaMA architecture (RoPE, RMSNorm, SwiGLU)
+    - Uses Grouped Query Attention (GQA) - typically 32 Q heads, 8 KV heads (4:1 ratio)
+    - No shared experts (standard top-k routing)
+    - Total: 46.7B parameters, but only ~12.9B active per token
+    """
     config["positional_encoding"] = "rope"
     config["normalization"] = "rmsnorm"
     config["activation"] = "swiglu"
@@ -586,6 +595,15 @@ def apply_llama_moe_preset(config: Dict) -> None:
     config["router_type"] = "top_k"
     config["load_balancing_loss_weight"] = 0.01
     config["expert_capacity_factor"] = 1.25
+    # Set GQA: use 4:1 ratio (e.g., 32 Q heads -> 8 KV heads, or 8 Q heads -> 2 KV heads)
+    n_heads = config.get("n_heads", 32)
+    # GQA with 4:1 ratio (Mixtral-style)
+    config["n_kv_heads"] = max(1, n_heads // 4)
+
+
+def apply_llama_moe_preset(config: Dict) -> None:
+    """Deprecated: Use apply_mixtral_preset instead. Kept for backward compatibility."""
+    apply_mixtral_preset(config)
 
 
 def render_model_config_ui() -> Dict:
@@ -627,6 +645,7 @@ def _get_default_config() -> Dict:
         "model_size": "small",
         "d_model": 256,
         "n_heads": 4,
+        "n_kv_heads": 4,  # Default to MHA (n_kv_heads = n_heads)
         "n_layers": 4,
         "n_ctx": 256,
         "d_head": 64,
@@ -674,8 +693,8 @@ def _render_preset_buttons(config: Dict) -> None:
             st.rerun()
 
     with col5:
-        if st.button("🦙 Llama MoE", width='stretch'):
-            apply_llama_moe_preset(config)
+        if st.button("🎯 Mixtral", width='stretch'):
+            apply_mixtral_preset(config)
             apply_model_size_preset(config.get("model_size", "small"), config)
             st.rerun()
 
@@ -714,6 +733,73 @@ def _render_model_components(config: Dict) -> None:
             index=["gelu", "swiglu"].index(config["activation"]),
             help="GELU: GPT style\nSwiGLU: LLaMA/OLMo style (gated)"
         )
+
+    # Attention type selector (GQA/MQA support)
+    st.markdown("---")
+    attention_type_options = [
+        "Multi-Head (MHA)", "Grouped Query (GQA)", "Multi-Query (MQA)"]
+    current_n_kv_heads = config.get("n_kv_heads", config.get("n_heads", 12))
+    current_n_heads = config.get("n_heads", 12)
+
+    # Determine current attention type
+    if current_n_kv_heads == current_n_heads:
+        current_attention_type = "Multi-Head (MHA)"
+    elif current_n_kv_heads == 1:
+        current_attention_type = "Multi-Query (MQA)"
+    else:
+        current_attention_type = "Grouped Query (GQA)"
+
+    attention_type_index = attention_type_options.index(
+        current_attention_type) if current_attention_type in attention_type_options else 0
+
+    attention_type = st.selectbox(
+        "Attention Type",
+        attention_type_options,
+        index=attention_type_index,
+        help="MHA: Standard multi-head attention (each head has separate Q/K/V)\n"
+        "GQA: Grouped Query Attention - groups of Q heads share K/V heads (efficient, used in LLaMA 2, Mistral)\n"
+        "MQA: Multi-Query Attention - all Q heads share single K/V head (most efficient, slight quality trade-off)"
+    )
+
+    # Update n_kv_heads based on selection
+    if attention_type == "Multi-Head (MHA)":
+        config["n_kv_heads"] = current_n_heads
+    elif attention_type == "Multi-Query (MQA)":
+        config["n_kv_heads"] = 1
+    else:  # GQA
+        # Show n_kv_heads input for GQA
+        if "n_kv_heads" not in config or config["n_kv_heads"] == current_n_heads or config["n_kv_heads"] == 1:
+            # Set a reasonable default for GQA (e.g., 8 KV heads for 32 Q heads)
+            default_kv_heads = max(1, current_n_heads //
+                                   4) if current_n_heads >= 4 else 1
+            config["n_kv_heads"] = default_kv_heads
+
+        col_gqa1, col_gqa2 = st.columns([1, 2])
+        with col_gqa1:
+            config["n_kv_heads"] = st.number_input(
+                "n_kv_heads (KV Heads)",
+                min_value=1,
+                max_value=current_n_heads,
+                value=config["n_kv_heads"],
+                step=1,
+                help=f"Number of KV heads (must divide {current_n_heads}). "
+                f"Lower values = smaller KV cache, faster inference. "
+                f"Common: {current_n_heads // 4} or {current_n_heads // 2} for GQA."
+            )
+
+        with col_gqa2:
+            if current_n_heads % config["n_kv_heads"] != 0:
+                st.error(
+                    f"n_kv_heads ({config['n_kv_heads']}) must divide n_heads ({current_n_heads})")
+            elif config["n_kv_heads"] == current_n_heads:
+                st.info("This is equivalent to Multi-Head Attention (MHA)")
+            elif config["n_kv_heads"] == 1:
+                st.info("This is equivalent to Multi-Query Attention (MQA)")
+            else:
+                kv_cache_reduction = (
+                    1 - config["n_kv_heads"] / current_n_heads) * 100
+                st.success(
+                    f"KV cache reduced by {kv_cache_reduction:.1f}% vs MHA")
 
 
 def _render_model_dimensions(config: Dict) -> None:
@@ -893,7 +979,7 @@ def _get_preset_info() -> str:
     - **LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation, SentencePiece tokenizer
     - **OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation, SentencePiece tokenizer
     - **DeepSeek V2**: LLaMA-style with MoE (64 experts, top-6, 2 shared experts)
-    - **Llama MoE**: LLaMA-style with MoE (8 experts, top-2, Mixtral-style)
+    - **Mixtral**: LLaMA-style with MoE (8 experts, top-2 routing). Sparse MoE architecture with 8 experts per layer, activating 2 experts per token. Based on Mixtral 8x7B design.
 
     **Model Size:**
     - Controls model dimensions (d_model, n_heads, n_layers, etc.)
@@ -903,8 +989,8 @@ def _get_preset_info() -> str:
     **MoE (Mixture of Experts):**
     - MoE models use multiple expert MLPs with routing
     - Only a subset of experts are activated per token (more efficient)
-    - DeepSeek V2 uses shared experts (always active) + routed experts
-    - Llama MoE uses standard top-k routing
+    - **DeepSeek V2**: Uses shared experts (always active) + routed experts (top-k with shared)
+    - **Mixtral**: Uses standard top-k routing (8 experts, top-2 per token)
 
     **Customization:**
     - All options below can be manually adjusted after selecting a preset
@@ -980,8 +1066,16 @@ def generate_graphviz_architecture(config: Dict) -> str:
     dot.append(f'        heads [label="{heads_label}", fillcolor="#6a5a5a"];')
 
     # MLP
+    use_moe = config.get("use_moe", False)
     mlp_label = "MLP  m"
-    if activation == "swiglu":
+    if use_moe:
+        num_experts = config.get("num_experts", 8)
+        num_experts_per_tok = config.get("num_experts_per_tok", 2)
+        mlp_label += f"\\n(MoE: {num_experts} experts,\\ntop-{num_experts_per_tok})"
+        if config.get("use_shared_experts", False):
+            num_shared = config.get("num_shared_experts", 2)
+            mlp_label += f"\\n+ {num_shared} shared"
+    elif activation == "swiglu":
         mlp_label += "\\n(SwiGLU)"
     elif activation == "gelu":
         mlp_label += "\\n(GELU)"
@@ -1055,6 +1149,13 @@ def render_model_equations(config: Dict) -> None:
         norm = config.get("normalization", "layernorm")
         activation = config.get("activation", "gelu")
         rope_theta = config.get("rope_theta", 10000.0)
+        use_moe = config.get("use_moe", False)
+        num_experts = config.get("num_experts", 8)
+        num_experts_per_tok = config.get("num_experts_per_tok", 2)
+        use_shared_experts = config.get("use_shared_experts", False)
+        num_shared_experts = config.get("num_shared_experts", 2)
+        load_balancing_loss_weight = config.get(
+            "load_balancing_loss_weight", 0.01)
 
         st.markdown("### Key Notation")
         st.markdown("""
@@ -1203,7 +1304,58 @@ def render_model_equations(config: Dict) -> None:
 
         st.markdown("#### 3.2 MLP Sub-block")
 
-        if norm == "layernorm":
+        if use_moe:
+            st.markdown("**Mixture of Experts (MoE) MLP:**")
+            st.markdown(
+                f"Using {num_experts} expert MLPs, activating top-{num_experts_per_tok} per token.")
+
+            st.markdown("**Router Network:**")
+            st.latex(
+                r"\text{router\_logits} = x_{\text{norm}} W_{\text{router}}^T")
+            st.latex(
+                r"\text{router\_probs} = \text{softmax}(\text{router\_logits}, \text{dim}=-1)")
+            st.markdown(
+                f"where $W_{{\\text{{router}}}} \\in \\mathbb{{R}}^{{{d_model} \\times {num_experts}}}$")
+
+            st.markdown("**Top-k Expert Selection:**")
+            st.latex(
+                r"\text{top\_k\_probs}, \text{top\_k\_indices} = \text{topk}(\text{router\_probs}, k=" + str(num_experts_per_tok) + r")")
+            st.latex(
+                r"\text{top\_k\_probs} = \frac{\text{top\_k\_probs}}{\sum_{k} \text{top\_k\_probs}}")
+
+            st.markdown("**Expert Processing:**")
+            st.latex(r"\text{output} = \sum_{i=1}^{" + str(num_experts) +
+                     r"} w_i \cdot \text{Expert}_i(x_{\text{norm}})")
+            st.markdown(
+                "where $w_i$ is the routing weight for expert $i$ (0 if not selected, normalized top-k probability if selected)")
+
+            if use_shared_experts:
+                st.markdown(
+                    f"**Shared Experts ({num_shared_experts} always active):**")
+                st.latex(r"\text{shared\_output} = \frac{1}{" + str(num_shared_experts) +
+                         r"} \sum_{j=1}^{" + str(num_shared_experts) + r"} \text{SharedExpert}_j(x_{\text{norm}})")
+                st.latex(
+                    r"\text{output} = \text{output} + \text{shared\_output}")
+
+            st.markdown("**Load Balancing Loss (Auxiliary):**")
+            st.latex(
+                r"f_i = \frac{\text{tokens routed to expert } i}{\text{total tokens} \times k}")
+            st.latex(r"P_i = \text{mean}(\text{router\_probs}[:, :, i])")
+            st.latex(r"\mathcal{L}_{\text{aux}} = " + str(num_experts) +
+                     r" \times \sum_{i=1}^{" + str(num_experts) + r"} P_i \cdot f_i")
+            st.markdown("**Total Loss:**")
+            st.latex(r"\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{main}} + " + str(
+                load_balancing_loss_weight) + r" \times \mathcal{L}_{\text{aux}}")
+
+            st.markdown("**Expert MLP Architecture:**")
+            if activation == "swiglu":
+                st.markdown(
+                    "Each expert uses SwiGLU activation (same as standard SwiGLU MLP)")
+            else:
+                st.markdown(
+                    "Each expert uses GELU activation (same as standard GELU MLP)")
+
+        elif norm == "layernorm":
             st.markdown("""
             **Pre-Normalization (LayerNorm):**
             ```
@@ -1279,11 +1431,17 @@ def render_model_equations(config: Dict) -> None:
 
         st.markdown("---")
         st.markdown("### Summary")
+        moe_info = ""
+        if use_moe:
+            moe_info = f"\n        - **MoE**: {num_experts} experts, top-{num_experts_per_tok}"
+            if use_shared_experts:
+                moe_info += f", {num_shared_experts} shared experts"
+
         st.markdown(f"""
         **Your Model Configuration:**
         - **Positional Encoding**: {pos_enc.upper()}
         - **Normalization**: {norm.upper()}
-        - **Activation**: {activation.upper()}
+        - **Activation**: {activation.upper()}{moe_info}
         - **Dimensions**: d_model={d_model}, n_heads={n_heads}, d_head={d_head}, d_mlp={d_mlp}
         """)
 
@@ -1441,7 +1599,15 @@ def _determine_components_to_show(config: Dict) -> Dict[str, Dict]:
     }
 
     # MLP
-    if activation == "swiglu":
+    use_moe = config.get("use_moe", False)
+    if use_moe:
+        # MoE MLP classes
+        components["mlp"] = {
+            "class": "MoEMLPWithEinops" if use_einops else "MoEMLPWithoutEinops",
+            "activation": activation,
+            "use_moe": True
+        }
+    elif activation == "swiglu":
         components["mlp"] = {
             "class": "MLPSwiGLUWithEinops" if use_einops else "MLPSwiGLUWithoutEinops",
             "activation": activation
